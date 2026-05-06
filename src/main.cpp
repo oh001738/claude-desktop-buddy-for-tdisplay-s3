@@ -997,10 +997,11 @@ void loop() {
   // Button-press wake. Track which button woke the screen so its full
   // press cycle (including long-press) is swallowed — you don't want
   // BtnA-to-wake to also cycle displayMode or open the menu.
-  if (btnA || btnB) {
+  // Button-press wake.
+  if (hal_btn_a_pressed() || hal_btn_b_pressed()) {
     if (screenOff) {
-      if (btnA) swallowBtnA = true;
-      if (btnB) swallowBtnB = true;
+      if (hal_btn_a_pressed()) swallowBtnA = true;
+      if (hal_btn_b_pressed()) swallowBtnB = true;
     }
     wake();
   }

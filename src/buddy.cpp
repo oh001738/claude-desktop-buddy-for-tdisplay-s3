@@ -1,4 +1,5 @@
 #include "buddy.h"
+#include "hal.h"
 #include "buddy_common.h"
 #include <TFT_eSPI.h>
 #include <string.h>
