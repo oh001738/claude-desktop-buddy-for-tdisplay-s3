@@ -1,6 +1,6 @@
 #include "buddy.h"
 #include "buddy_common.h"
-#include <M5StickCPlus.h>
+#include <TFT_eSPI.h>
 #include <string.h>
 
 extern TFT_eSprite spr;
@@ -9,8 +9,8 @@ extern TFT_eSprite spr;
 enum { B_SLEEP, B_IDLE, B_BUSY, B_ATTENTION, B_CELEBRATE, B_DIZZY, B_HEART };
 
 // ──────────────── shared geometry ────────────────
-const int BUDDY_X_CENTER = 67;
-const int BUDDY_CANVAS_W = 135;
+const int BUDDY_X_CENTER = SCREEN_W / 2;
+const int BUDDY_CANVAS_W = SCREEN_W;
 const int BUDDY_Y_BASE   = 30;
 const int BUDDY_Y_OVERLAY = 6;
 const int BUDDY_CHAR_W   = 6;
@@ -30,7 +30,7 @@ const uint16_t BUDDY_BLUE   = 0x041F;
 
 // ──────────────── shared rendering helpers ────────────────
 // Render target indirection: defaults to the sprite, but can retarget to
-// M5.Lcd for landscape clock mode (both inherit TFT_eSPI). Coords stay
+// hal_get_lcd() for landscape clock mode (both inherit TFT_eSPI). Coords stay
 // fixed — species hardcode BUDDY_X_CENTER/BUDDY_Y_OVERLAY in their
 // particle calls, so retargeting position would only move the body.
 static TFT_eSPI* _tgt = &spr;
@@ -153,7 +153,7 @@ void buddySetPeek(bool peek) {
   buddyInvalidate();
 }
 
-// One-shot render to an arbitrary TFT_eSPI surface (M5.Lcd for landscape
+// One-shot render to an arbitrary TFT_eSPI surface (hal_get_lcd() for landscape
 // clock). Bypasses tick gating and the sprite fillRect — caller owns
 // clearing. Advances the frame counter so animation runs even when
 // buddyTick is bypassed.

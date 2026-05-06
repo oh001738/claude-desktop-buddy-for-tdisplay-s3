@@ -1,6 +1,6 @@
 #include "../buddy.h"
 #include "../buddy_common.h"
-#include <M5StickCPlus.h>
+#include <TFT_eSPI.h>
 #include <string.h>
 
 extern TFT_eSprite spr;

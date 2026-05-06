@@ -1,4 +1,10 @@
-.pio/
-.vscode/
+.pio
+.vscode
 .DS_Store
-data/
+T-Display-S3-main/
+node_modules/
+dist/
+build/
+*.bin
+*.elf
+*.o

@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include <TFT_eSPI.h>
 
 // Shared constants and helpers for buddy species files.
 // Each species file (src/buddies/<name>.cpp) includes this header

@@ -1,5 +1,5 @@
 #include "character.h"
-#include <M5StickCPlus.h>
+#include <TFT_eSPI.h>
 #include <LittleFS.h>
 #include <AnimatedGIF.h>
 #include <ArduinoJson.h>
@@ -35,7 +35,7 @@ static uint8_t gifTotal = 0;
 static uint8_t curState = 0xFF;
 
 static AnimatedGIF gif;
-static File        gifFile;
+static fs::File        gifFile;
 static int         gifX = 0, gifY = 0, gifW = 0, gifH = 0;
 // Peek mode pins the GIF bottom to the info-panel top (y=70) so the pet
 // sits on the panel edge regardless of canvas height. Home mode centers
@@ -43,7 +43,7 @@ static int         gifX = 0, gifY = 0, gifW = 0, gifH = 0;
 static const int   PEEK_TOP = 70;
 static bool        peekMode = false;
 // Draw target — defaults to the sprite; characterRenderTo() retargets to
-// M5.Lcd for the landscape clock (both inherit TFT_eSPI).
+// hal_get_lcd() for the landscape clock (both inherit TFT_eSPI).
 static TFT_eSPI*   _tgt = &spr;
 // Peek mode renders at half scale (2:1 nearest-neighbor in gifDrawCb) so
 // the whole pet fits the 70px window instead of cropping the top.
@@ -77,19 +77,19 @@ static void* gifOpenCb(const char* fname, int32_t* pSize) {
 }
 
 static void gifCloseCb(void* handle) {
-  File* f = (File*)handle;
+  fs::File* f = (fs::File*)handle;
   if (f) f->close();
 }
 
 static int32_t gifReadCb(GIFFILE* pFile, uint8_t* pBuf, int32_t iLen) {
-  File* f = (File*)pFile->fHandle;
+  fs::File* f = (fs::File*)pFile->fHandle;
   int32_t n = f->read(pBuf, iLen);
   pFile->iPos = f->position();
   return n;
 }
 
 static int32_t gifSeekCb(GIFFILE* pFile, int32_t iPosition) {
-  File* f = (File*)pFile->fHandle;
+  fs::File* f = (fs::File*)pFile->fHandle;
   f->seek(iPosition);
   pFile->iPos = (int32_t)f->position();
   return pFile->iPos;
@@ -150,9 +150,9 @@ bool characterInit(const char* name) {
   // Makes the boot character whatever you last installed.
   static char scanned[24];
   if (!name) {
-    File d = LittleFS.open("/characters");
+    fs::File d = LittleFS.open("/characters");
     if (d && d.isDirectory()) {
-      File e = d.openNextFile();
+      fs::File e = d.openNextFile();
       while (e) {
         if (e.isDirectory()) {
           const char* n = strrchr(e.name(), '/');
@@ -172,7 +172,7 @@ bool characterInit(const char* name) {
   char mpath[64];
   snprintf(mpath, sizeof(mpath), "%s/manifest.json", basePath);
 
-  File mf = LittleFS.open(mpath, "r");
+  fs::File mf = LittleFS.open(mpath, "r");
   if (!mf) {
     Serial.printf("[char] manifest not found: %s\n", mpath);
     return false;
@@ -247,7 +247,7 @@ bool characterInit(const char* name) {
 bool characterLoaded() { return loaded; }
 const Palette& characterPalette() { return pal; }
 
-// One-shot half-scale render to an arbitrary surface (M5.Lcd for the
+// One-shot half-scale render to an arbitrary surface (hal_get_lcd() for the
 // landscape clock). Caller owns clearing. Advances frame timing so
 // animation runs even when characterTick() is bypassed.
 void characterRenderTo(TFT_eSPI* tgt, int cx, int cy) {

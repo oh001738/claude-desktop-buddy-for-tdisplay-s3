@@ -5,7 +5,7 @@
 #include <mbedtls/base64.h>
 #include <ArduinoJson.h>
 
-static File     _xFile;
+static fs::File     _xFile;
 static uint32_t _xExpected = 0, _xWritten = 0;
 static char     _xCharName[24] = "";
 static bool     _xActive = false;
@@ -22,10 +22,10 @@ static void _xAck(const char* what, bool ok, uint32_t n = 0) {
 }
 
 static uint32_t _xWipeDir(const char* dir) {
-  File d = LittleFS.open(dir);
+  fs::File d = LittleFS.open(dir);
   if (!d || !d.isDirectory()) { LittleFS.mkdir(dir); return 0; }
   uint32_t freed = 0;
-  File f = d.openNextFile();
+  fs::File f = d.openNextFile();
   while (f) {
     freed += f.size();
     char p[80];
@@ -42,10 +42,10 @@ static uint32_t _xWipeDir(const char* dir) {
 // under a different name would otherwise leave the old one's files eating
 // space. Wipe everything under /characters/, return total bytes reclaimed.
 static uint32_t _xWipeAllChars() {
-  File root = LittleFS.open("/characters");
+  fs::File root = LittleFS.open("/characters");
   if (!root || !root.isDirectory()) { LittleFS.mkdir("/characters"); return 0; }
   uint32_t freed = 0;
-  File sub = root.openNextFile();
+  fs::File sub = root.openNextFile();
   while (sub) {
     if (sub.isDirectory()) {
       char p[64];
@@ -71,8 +71,8 @@ void petNameSet(const char* name);
 const char* petName();
 void ownerSet(const char* name);
 const char* ownerName();
+#include "hal.h"
 #include "stats.h"
-#include <M5StickCPlus.h>
 
 inline bool xferCommand(JsonDocument& doc) {
   const char* cmd = doc["cmd"];
@@ -112,9 +112,9 @@ inline bool xferCommand(JsonDocument& doc) {
   if (strcmp(cmd, "status") == 0) {
     // Dump everything the info screens show. Manual printf rather than
     // ArduinoJson serialize — less heap churn, and the shape is fixed.
-    int vBat = (int)(M5.Axp.GetBatVoltage() * 1000);
-    int iBat = (int)M5.Axp.GetBatCurrent();
-    int vBus = (int)(M5.Axp.GetVBusVoltage() * 1000);
+    int vBat = (int)(hal_get_battery_voltage() * 1000);
+    int iBat = 0; // Not available on S3
+    bool usb = hal_is_on_usb();
     int pct = (vBat - 3200) / 10;
     if (pct < 0) pct = 0; if (pct > 100) pct = 100;
     char b[320];
@@ -126,7 +126,7 @@ inline bool xferCommand(JsonDocument& doc) {
       "\"stats\":{\"appr\":%u,\"deny\":%u,\"vel\":%u,\"nap\":%lu,\"lvl\":%u}"
       "}}\n",
       petName(), ownerName(), bleSecure() ? "true" : "false",
-      pct, vBat, iBat, (vBus > 4000) ? "true" : "false",
+      pct, vBat, iBat, usb ? "true" : "false",
       millis() / 1000, ESP.getFreeHeap(),
       (unsigned long)(LittleFS.totalBytes() - LittleFS.usedBytes()),
       (unsigned long)LittleFS.totalBytes(),
@@ -148,12 +148,12 @@ inline bool xferCommand(JsonDocument& doc) {
     uint32_t free = LittleFS.totalBytes() - LittleFS.usedBytes();
     uint32_t reclaimable = 0;
     {
-      File r = LittleFS.open("/characters");
+      fs::File r = LittleFS.open("/characters");
       if (r && r.isDirectory()) {
-        File s = r.openNextFile();
+        fs::File s = r.openNextFile();
         while (s) {
           if (s.isDirectory()) {
-            File f = s.openNextFile();
+            fs::File f = s.openNextFile();
             while (f) { reclaimable += f.size(); f.close(); f = s.openNextFile(); }
           }
           s.close(); s = r.openNextFile();
