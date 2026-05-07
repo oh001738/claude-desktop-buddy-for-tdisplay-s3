@@ -306,7 +306,7 @@
             port = await navigator.serial.requestPort();
             await port.open({ baudRate: 115200 });
             document.getElementById('conn-status').textContent = "已連接";
-            document.getElementById('conn-status').style.color = var(--primary);
+            document.getElementById('conn-status').style.color = "#00ff9d";
             document.getElementById('btn-upload').disabled = false;
             log("設備已連接，準備上傳。");
             readLoop();
