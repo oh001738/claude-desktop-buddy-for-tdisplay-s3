@@ -160,7 +160,7 @@ void buddySetPeek(bool peek) {
 // buddyTick is bypassed.
 // Landscape clock callsite — always 1×.
 void buddyRenderTo(TFT_eSPI* tgt, uint8_t personaState) {
-  uint8_t prevS = _scale; _scale = 1;
+  uint8_t prevS = _scale; _scale = 2; // Scale up for S3!
   if (personaState >= 7) personaState = B_IDLE;
   uint32_t now = millis();
   if ((int32_t)(now - nextTickAt) >= 0) { nextTickAt = now + TICK_MS; tickCount++; }

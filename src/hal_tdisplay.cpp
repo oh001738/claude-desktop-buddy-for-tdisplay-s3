@@ -69,8 +69,10 @@ void hal_init() {
     // Buttons
     pinMode(PIN_BUTTON_1, INPUT_PULLUP);
     pinMode(PIN_BUTTON_2, INPUT_PULLUP);
-    btnA.setDebounceMs(50);
-    btnB.setDebounceMs(50);
+    btnA.setClickMs(150);
+    btnB.setClickMs(150);
+    btnA.setDebounceMs(30);
+    btnB.setDebounceMs(30);
     btnA.attachClick([]() { btnAClicked = true; });
     btnB.attachClick([]() { btnBClicked = true; });
     btnA.attachLongPressStart([]() { btnALongPressed = true; });
