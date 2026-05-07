@@ -494,8 +494,8 @@ static void drawClock() {
     // T-Display S3 Portrait Layout: Pet at top, clock centered in lower half
     spr.fillRect(0, 110, W, H - 110, p.bg);
     spr.setTextDatum(MC_DATUM);
-    spr.setTextSize(6); spr.setTextColor(p.text, p.bg);    spr.drawString(hm, CX, 180);
-    spr.setTextSize(3); spr.setTextColor(p.textDim, p.bg); spr.drawString(ss, CX, 225);
+    spr.setTextSize(5); spr.setTextColor(p.text, p.bg);    spr.drawString(hm, CX, 180);
+    spr.setTextSize(2); spr.setTextColor(p.textDim, p.bg); spr.drawString(ss, CX, 225);
     spr.setTextSize(2);                                     spr.drawString(dl, CX, 265);
     spr.setTextDatum(TL_DATUM);
     return;
@@ -1074,7 +1074,7 @@ void setup() {
     }
     spr.setTextDatum(TL_DATUM); spr.setTextSize(1);
     spr.pushSprite(0, 0);
-    delay(1800);
+    delay(500);
   }
 
   Serial.printf("buddy: %s\n", buddyMode ? "ASCII mode" : "GIF character loaded");
@@ -1145,9 +1145,6 @@ void loop() {
   // Button-press wake. Track which button woke the screen so its full
   // press cycle (including long-press) is swallowed — you don't want
   // BtnA-to-wake to also cycle displayMode or open the menu.
-  if (clocking) clockUpdateOrient();
-
-  // Button-press wake.
   if (hal_btn_a_pressed() || hal_btn_b_pressed()) {
     if (screenOff) {
       if (hal_btn_a_pressed()) swallowBtnA = true;
@@ -1156,25 +1153,29 @@ void loop() {
     wake();
   }
 
-  // Power button handling is moved to HAL/deep sleep if needed, 
-  // or we can add a hal_get_power_btn() if T-Display S3 supports it.
-  // For now, assume it's handled or ignore M5 AXP specific btn.
+  // If a passkey is active, we swallow most button actions to avoid 
+  // accidental state changes, but we still allow wake/interact.
+  bool pairingActive = blePasskey() != 0;
 
   if (btnALong && !swallowBtnA) {
     btnALong = true;
-    beep(800, 60);
-    if (resetOpen) { resetOpen = false; }
-    else if (settingsOpen) { settingsOpen = false; characterInvalidate(); }
+    if (pairingActive) { /* swallow */ }
     else {
-      menuOpen = !menuOpen;
-      menuSel = 0;
-      if (!menuOpen) characterInvalidate();
+      beep(800, 60);
+      if (resetOpen) { resetOpen = false; }
+      else if (settingsOpen) { settingsOpen = false; characterInvalidate(); }
+      else {
+        menuOpen = !menuOpen;
+        menuSel = 0;
+        if (!menuOpen) characterInvalidate();
+      }
     }
-    Serial.println(menuOpen ? "menu open" : "menu close");
   }
   if (hal_btn_a_clicked()) {
+    lastInteractMs = millis();
     if (!btnALong && !swallowBtnA) {
-      if (inPrompt) {
+      if (pairingActive) { beep(1800, 30); /* feedback only */ }
+      else if (inPrompt) {
         char cmd[96];
         snprintf(cmd, sizeof(cmd), "{\"cmd\":\"permission\",\"id\":\"%s\",\"decision\":\"once\"}", tama.promptId);
         sendCmd(cmd);
@@ -1207,9 +1208,10 @@ void loop() {
 
   // BtnB: pet → heart
   if (btnB) {
+    lastInteractMs = millis();
     if (swallowBtnB) { swallowBtnB = false; }
-    else
-    if (inPrompt) {
+    else if (pairingActive) { beep(2400, 30); /* feedback only */ }
+    else if (inPrompt) {
       char cmd[96];
       snprintf(cmd, sizeof(cmd), "{\"cmd\":\"permission\",\"id\":\"%s\",\"decision\":\"deny\"}", tama.promptId);
       sendCmd(cmd);
@@ -1316,8 +1318,17 @@ void loop() {
       spr.print("no character loaded");
     }
   }
-  if (!napping && !screenOff) {
-    if (blePasskey()) drawPasskey();
+  // Passkey is a global priority: wake and render even if screen was off
+  if (blePasskey()) {
+    if (screenOff || napping) {
+      wake();
+      napping = false;
+      hal_set_brightness(brightLevel);
+    }
+    drawPasskey();
+    hal_get_lcd()->setRotation(0);
+    spr.pushSprite(0, 0);
+  } else if (!napping && !screenOff) {
     if (menuOpen || settingsOpen || resetOpen) {
       if (clockOrient == 0) {
         hal_get_lcd()->setRotation(0);
@@ -1370,7 +1381,8 @@ void loop() {
   // millis() not the cached `now`: wake() runs after `now` is captured,
   // so now - lastInteractMs underflows when a button is held → flicker.
   // No auto-off on USB power — clock face wants to stay visible while charging.
-  if (!screenOff && !inPrompt && !_onUsb
+  // No auto-off on USB power or during pairing/prompts
+  if (!screenOff && !inPrompt && !blePasskey() && !_onUsb
       && millis() - lastInteractMs > SCREEN_OFF_MS) {
     hal_screen_off();
     screenOff = true;
