@@ -62,9 +62,10 @@ void hal_init() {
     tft.setRotation(0); // Portrait (170x320)
     tft.setSwapBytes(true);
     
-    // Backlight
-    pinMode(PIN_LCD_BL, OUTPUT);
-    digitalWrite(PIN_LCD_BL, HIGH);
+    // Backlight PWM initialization
+    ledcSetup(0, 5000, 8); // Channel 0, 5000Hz, 8-bit resolution
+    ledcAttachPin(PIN_LCD_BL, 0);
+    ledcWrite(0, 255); // Default full brightness
 
     // Buttons
     pinMode(PIN_BUTTON_1, INPUT_PULLUP);
@@ -89,11 +90,11 @@ void hal_loop() {
 TFT_eSPI* hal_get_lcd() { return &tft; }
 
 void hal_set_brightness(uint8_t level) {
-    digitalWrite(PIN_LCD_BL, level > 0 ? HIGH : LOW);
+    ledcWrite(0, level);
 }
 
-void hal_screen_off() { digitalWrite(PIN_LCD_BL, LOW); digitalWrite(PIN_POWER_ON, LOW); }
-void hal_screen_on() { digitalWrite(PIN_POWER_ON, HIGH); digitalWrite(PIN_LCD_BL, HIGH); }
+void hal_screen_off() { ledcWrite(0, 0); digitalWrite(PIN_POWER_ON, LOW); }
+void hal_screen_on() { digitalWrite(PIN_POWER_ON, HIGH); ledcWrite(0, 255); }
 
 bool hal_btn_a_pressed() { return digitalRead(PIN_BUTTON_1) == LOW; }
 bool hal_btn_b_pressed() { return digitalRead(PIN_BUTTON_2) == LOW; }

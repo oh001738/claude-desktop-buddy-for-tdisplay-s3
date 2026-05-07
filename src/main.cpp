@@ -97,7 +97,17 @@ uint32_t napStartMs = 0;
 uint32_t promptArrivedMs = 0;
 
 // Face-down = Z-axis dominant and negative. Debounced so a toss doesn't count.
-static void applyBrightness() { hal_set_brightness(brightLevel); }
+static void applyBrightness() { 
+  uint8_t pwm;
+  switch(brightLevel) {
+    case 0: pwm = 100; break;
+    case 1: pwm = 140; break;
+    case 2: pwm = 180; break;
+    case 3: pwm = 220; break;
+    case 4: default: pwm = 255; break;
+  }
+  hal_set_brightness(pwm); 
+}
 
 static void wake() {
   lastInteractMs = millis();
@@ -539,11 +549,21 @@ static void drawClock() {
     hal_get_lcd()->setTextSize(1);
   }
 
-  // Draw status message at the bottom center of the right half
-  hal_get_lcd()->setTextDatum(BC_DATUM);
-  hal_get_lcd()->setTextSize(1);
-  hal_get_lcd()->setTextColor(p.textDim, p.bg);
-  hal_get_lcd()->drawString(tama.msg, clockX, 160);
+  // Draw status message or transcript
+  if (tama.nLines > 0) {
+    hal_get_lcd()->setTextSize(1);
+    hal_get_lcd()->setTextDatum(TL_DATUM);
+    for (uint8_t i = 0; i < tama.nLines && i < 3; i++) {
+       hal_get_lcd()->setTextColor(i==0 ? p.text : p.textDim, p.bg);
+       // Start at Y=138, which is safely below the Date at Y=120
+       hal_get_lcd()->drawString(tama.lines[i], 175, 138 + i * 10);
+    }
+  } else {
+    hal_get_lcd()->setTextDatum(BC_DATUM);
+    hal_get_lcd()->setTextSize(1);
+    hal_get_lcd()->setTextColor(p.textDim, p.bg);
+    hal_get_lcd()->drawString(tama.msg, clockX, 160);
+  }
   hal_get_lcd()->setTextDatum(TL_DATUM);
 
   // Pet on left side (approx 0..140)
@@ -786,10 +806,54 @@ static uint8_t wrapInto(const char* in, char out[][32], uint8_t maxRows, uint8_t
 
 static void drawApproval() {
   const Palette& p = characterPalette();
-  const int AREA = 110; // T-Display S3: expand area
+  if (clockOrient != 0) {
+    // --- Landscape Approval: Stable Menu-style logic ---
+    hal_get_lcd()->setRotation(clockOrient);
+    
+    // Ensure pet doesn't flicker, using our unified logic
+    renderLandscapePet(85, 85, true); 
+    
+    txtSpr.fillSprite(p.bg);
+    txtSpr.setTextSize(1);
+    txtSpr.setTextColor(HOT, p.bg);
+    txtSpr.setCursor(5, 10);
+    uint32_t waited = (millis() - promptArrivedMs) / 1000;
+    txtSpr.printf("APPROVE? %lus", (unsigned long)waited);
+    
+    txtSpr.setTextColor(p.text, p.bg);
+    txtSpr.setTextSize(2);
+    txtSpr.setCursor(5, 25);
+    txtSpr.print(tama.promptTool);
+    
+    txtSpr.setTextSize(1);
+    txtSpr.setTextColor(p.textDim, p.bg);
+    txtSpr.setCursor(5, 50);
+    // Hint with manual wrap for the 150px txtSpr
+    txtSpr.printf("%.20s", tama.promptHint);
+    if (strlen(tama.promptHint) > 20) {
+      txtSpr.setCursor(5, 60);
+      txtSpr.printf("%.20s", tama.promptHint + 20);
+    }
+    
+    // Bottom Action Area
+    if (responseSent) {
+      txtSpr.setTextColor(p.textDim, p.bg);
+      txtSpr.drawString("sent...", 75, 150, 2);
+    } else {
+      txtSpr.setTextColor(GREEN, p.bg);
+      txtSpr.drawString("1:Approve", 5, 150, 2);
+      txtSpr.setTextColor(HOT, p.bg);
+      txtSpr.drawString("2:Deny", 85, 150, 2);
+    }
+    
+    txtSpr.pushSprite(170, 0);
+    return;
+  }
+
+  // --- Portrait Approval ---
+  const int AREA = 110; 
   spr.fillRect(0, H - AREA, W, AREA, p.bg);
   spr.drawFastHLine(0, H - AREA, W, p.textDim);
-
   spr.setTextSize(1);
   spr.setTextColor(p.textDim, p.bg);
   spr.setCursor(4, H - AREA + 4);
@@ -797,7 +861,6 @@ static void drawApproval() {
   if (waited >= 10) spr.setTextColor(HOT, p.bg);
   spr.printf("approve? %lus", (unsigned long)waited);
 
-  // Size 2 only if it fits one line (~10 chars at 12px on 135px screen)
   int toolLen = strlen(tama.promptTool);
   spr.setTextColor(p.text, p.bg);
   spr.setTextSize(toolLen <= 10 ? 2 : 1);
@@ -805,7 +868,6 @@ static void drawApproval() {
   spr.print(tama.promptTool);
   spr.setTextSize(1);
 
-  // Hint wraps at ~21 chars to two lines under the tool name
   spr.setTextColor(p.textDim, p.bg);
   int hlen = strlen(tama.promptHint);
   spr.setCursor(4, H - AREA + 34);
@@ -1241,19 +1303,28 @@ void loop() {
 
   static bool wasClocking = false;
   static bool wasLandscape = false;
+  static bool wasPrompt = false;
   bool inMenu = menuOpen || settingsOpen || resetOpen;
+  // inPrompt is already declared above
 
-  if (clocking != wasClocking || landscapeClock != wasLandscape || (wasInMenu && !inMenu) || (wasDisplayMode != displayMode)) {
+  if (clocking != wasClocking || landscapeClock != wasLandscape || (wasInMenu && !inMenu) || (wasDisplayMode != displayMode) || (wasPrompt != inPrompt)) {
     if (clocking && !landscapeClock) characterSetPeek(buddyMode); 
     else applyDisplayMode();
     characterInvalidate();
     if (buddyMode) buddyInvalidate();
+    
+    // Trigger repaint if it was a mode/prompt/menu transition
+    if ((wasInMenu != inMenu) || (wasDisplayMode != displayMode) || (wasPrompt != inPrompt)) {
+      paintedOrient = 0xFF; 
+    }
+    
     wasClocking = clocking;
     wasLandscape = landscapeClock;
-    if ((wasInMenu && !inMenu) || (wasDisplayMode != displayMode)) paintedOrient = 0xFF; // Force landscape repaint
+    wasPrompt = inPrompt;
   }
   wasInMenu = inMenu;
   wasDisplayMode = displayMode;
+  wasPrompt = inPrompt; // Ensure global sync too
   if (clocking) {
     uint8_t dow = clockDow();
     bool weekend = (dow == 0 || dow == 6);

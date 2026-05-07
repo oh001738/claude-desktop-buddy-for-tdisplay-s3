@@ -34,11 +34,17 @@ static bool     _demoMode   = false;
 static uint8_t  _demoIdx    = 0;
 static uint32_t _demoNext   = 0;
 
-struct _Fake { const char* n; uint8_t t,r,w; bool c; uint32_t tok; };
+struct _Fake { 
+  const char* n; uint8_t t,r,w; bool c; uint32_t tok; 
+  const char* line1; const char* line2;
+  const char* promptTool;
+};
 static const _Fake _FAKES[] = {
-  {"asleep",0,0,0,false,0}, {"one idle",1,0,0,false,12000},
-  {"busy",4,3,0,false,89000}, {"attention",2,1,1,false,45000},
-  {"completed",1,0,0,true,142000},
+  {"asleep",0,0,0,false,0, nullptr, nullptr, nullptr},
+  {"idle",1,0,0,false,12000, "Hello! How can I help you today?", nullptr, nullptr},
+  {"busy",4,3,0,false,89000, "I'm analyzing the logs...", "Wait, I found an error in main.cpp.", nullptr},
+  {"attention",2,1,1,false,45000, "I need to read your project config.", nullptr, "read_file"},
+  {"completed",1,0,0,true,142000, "Optimization complete!", "Boot time reduced by 40%.", nullptr},
 };
 
 inline void dataSetDemo(bool on) {
@@ -52,7 +58,6 @@ inline bool dataConnected() {
 }
 
 inline bool dataBtActive() {
-  // Desktop's idle keepalive is ~10s; give it 1.5x headroom.
   return _lastBtByteMs != 0 && (millis() - _lastBtByteMs) <= 15000;
 }
 
@@ -62,8 +67,6 @@ inline const char* dataScenarioName() {
   return "none";
 }
 
-// Set true once the bridge sends a time sync — until then the RTC may
-// hold whatever was on the coin cell (or 2000-01-01 if it lost power).
 static bool _rtcValid = false;
 inline bool dataRtcValid() { return _rtcValid; }
 
@@ -72,8 +75,6 @@ static void _applyJson(const char* line, TamaState* out) {
   if (deserializeJson(doc, line)) return;
   if (xferCommand(doc)) { _lastLiveMs = millis(); return; }
 
-  // Bridge sends {"time":[epoch_sec, tz_offset_sec]}; gmtime_r on the
-  // adjusted epoch yields local components including weekday.
   JsonArray t = doc["time"];
   if (!t.isNull() && t.size() == 2) {
     time_t local = (time_t)t[0].as<uint32_t>() + (int32_t)t[1];
@@ -81,7 +82,7 @@ static void _applyJson(const char* line, TamaState* out) {
     hal_set_time(lt.tm_hour, lt.tm_min, lt.tm_sec);
     hal_set_date(lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday);
     extern uint32_t _clkLastRead;
-    _clkLastRead = 0;   // force re-read so _clkDt and _rtcValid agree
+    _clkLastRead = 0;   
     _rtcValid = true;
     _lastLiveMs = millis();
     return;
@@ -151,11 +152,22 @@ inline void dataPoll(TamaState* out) {
     out->recentlyCompleted=s.c; out->tokensToday=s.tok; out->lastUpdated=now;
     out->connected = true;
     snprintf(out->msg, sizeof(out->msg), "demo: %s", s.n);
+    
+    out->nLines = 0;
+    if (s.line1) { strncpy(out->lines[0], s.line1, 91); out->nLines = 1; }
+    if (s.line2) { strncpy(out->lines[1], s.line2, 91); out->nLines = 2; }
+    
+    if (s.promptTool) {
+      strncpy(out->promptId, "demo-id", 39);
+      strncpy(out->promptTool, s.promptTool, 19);
+      strncpy(out->promptHint, "Claude wants to access local files.", 43);
+    } else {
+      out->promptId[0] = 0;
+    }
     return;
   }
 
   _usbLine.feed(Serial, out);
-  // BLE ring buffer is drained manually since it's not a Stream.
   while (bleAvailable()) {
     int c = bleRead();
     if (c < 0) break;
