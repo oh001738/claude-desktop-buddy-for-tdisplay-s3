@@ -551,13 +551,24 @@ static void drawClock() {
 
   // Draw status message or transcript
   if (tama.nLines > 0) {
-    hal_get_lcd()->setTextSize(1);
-    hal_get_lcd()->setTextDatum(TL_DATUM);
+    // Re-use txtSpr for the transcript block (145x35 approx)
+    txtSpr.fillSprite(p.bg);
+    txtSpr.setTextSize(1);
+    txtSpr.setTextDatum(TL_DATUM);
+    uint32_t now = millis();
     for (uint8_t i = 0; i < tama.nLines && i < 3; i++) {
-       hal_get_lcd()->setTextColor(i==0 ? p.text : p.textDim, p.bg);
-       // Start at Y=138, which is safely below the Date at Y=120
-       hal_get_lcd()->drawString(tama.lines[i], 175, 138 + i * 10);
+       txtSpr.setTextColor(i==0 ? p.text : p.textDim, p.bg);
+       int tw = txtSpr.textWidth(tama.lines[i]);
+       int x = 0;
+       if (tw > 145) {
+         int range = tw - 145;
+         int offset = (now / 40) % (range * 2); 
+         if (offset > range) offset = range * 2 - offset;
+         x -= offset;
+       }
+       txtSpr.drawString(tama.lines[i], x, i * 11);
     }
+    txtSpr.pushSprite(175, 138); // Push only the transcript block
   } else {
     hal_get_lcd()->setTextDatum(BC_DATUM);
     hal_get_lcd()->setTextSize(1);
