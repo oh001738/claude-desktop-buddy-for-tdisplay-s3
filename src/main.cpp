@@ -343,7 +343,8 @@ static void drawSettings() {
   const Palette &p = characterPalette();
   if (clockOrient != 0) {
     hal_get_lcd()->setRotation(clockOrient);
-    renderLandscapePet(85, 85, wasInMenu != (menuOpen || settingsOpen || resetOpen));
+    renderLandscapePet(85, 85,
+                       wasInMenu != (menuOpen || settingsOpen || resetOpen));
 
     // Landscape Settings Side-Panel (150x170)
     txtSpr.fillSprite(p.bg);
@@ -357,20 +358,23 @@ static void drawSettings() {
     Settings &s = settings();
     int vLine = 0;
     for (int i = 0; i < SETTINGS_N; i++) {
-      if (!isSettingVisible(i)) continue;
+      if (!isSettingVisible(i))
+        continue;
       bool sel = (i == settingsSel);
       int y = 30 + vLine * 14;
-      
+
       txtSpr.setTextColor(sel ? p.text : p.textDim, p.bg);
-      if (sel) txtSpr.fillRect(5, y - 2, 140, 13, 0x2104); // subtle highlight
-      
+      if (sel)
+        txtSpr.fillRect(5, y - 2, 140, 13, 0x2104); // subtle highlight
+
       txtSpr.setCursor(10, y);
       txtSpr.print(sel ? "> " : "  ");
       txtSpr.print(settingsItems[i]);
-      
+
       // Values on the right
       txtSpr.setCursor(110, y);
-      if (i == 0) txtSpr.printf("%u/4", brightLevel);
+      if (i == 0)
+        txtSpr.printf("%u/4", brightLevel);
       else if (i == 2 || i == 3 || i == 5) {
         bool v = (i == 2) ? s.bt : (i == 3 ? s.wifi : s.hud);
         txtSpr.setTextColor(v ? GREEN : p.textDim, p.bg);
@@ -380,7 +384,8 @@ static void drawSettings() {
         txtSpr.print(RN[s.clockRot]);
       } else if (i == 7) {
         uint8_t total = buddySpeciesCount() + (gifAvailable ? 1 : 0);
-        txtSpr.printf("%u/%u", buddyMode ? buddySpeciesIdx() + 1 : total, total);
+        txtSpr.printf("%u/%u", buddyMode ? buddySpeciesIdx() + 1 : total,
+                      total);
       }
       vLine++;
     }
@@ -507,7 +512,8 @@ static void renderLandscapePet(int cx, int cy, bool force) {
       updated = true;
     }
   } else {
-    if (force) characterInvalidate();
+    if (force)
+      characterInvalidate();
     updated = characterRenderTo(&petSpr, cx, cy);
   }
 
@@ -735,20 +741,50 @@ static void _infoHeader(const Palette &p, int &y, const char *section,
 }
 
 void drawPasskey() {
+  static uint32_t lastPasskey = 0;
+  static uint32_t lastDraw = 0;
+  uint32_t currentPasskey = blePasskey();
+
+  // Only redraw if the passkey changed or 1 second has passed (to keep it alive)
+  if (currentPasskey == lastPasskey && millis() - lastDraw < 1000)
+    return;
+  lastPasskey = currentPasskey;
+  lastDraw = millis();
+
   const Palette &p = characterPalette();
-  spr.fillSprite(p.bg);
-  spr.setTextSize(1);
-  spr.setTextColor(p.textDim, p.bg);
-  spr.setCursor(8, 56);
-  spr.print("BLUETOOTH PAIRING");
-  spr.setCursor(8, 184);
-  spr.print("enter on desktop:");
-  spr.setTextSize(3);
-  spr.setTextColor(p.text, p.bg);
-  char b[8];
-  snprintf(b, sizeof(b), "%06lu", (unsigned long)blePasskey());
-  spr.setCursor((W - 18 * 6) / 2, 110);
-  spr.print(b);
+  if (clockOrient == 0) {
+    // Portrait: use sprite to avoid flicker
+    spr.fillSprite(p.bg);
+    spr.setTextSize(1);
+    spr.setTextColor(p.textDim, p.bg);
+    spr.setCursor(8, 56);
+    spr.print("BLUETOOTH PAIRING");
+    spr.setCursor(8, 184);
+    spr.print("enter on desktop:");
+    spr.setTextSize(3);
+    spr.setTextColor(p.text, p.bg);
+    char b[8];
+    snprintf(b, sizeof(b), "%06lu", (unsigned long)currentPasskey);
+    spr.setCursor((W - 18 * 6) / 2, 110);
+    spr.print(b);
+    hal_get_lcd()->setRotation(0);
+    spr.pushSprite(0, 0);
+  } else {
+    // Landscape: draw direct to LCD (no sprite big enough)
+    auto lcd = hal_get_lcd();
+    lcd->setRotation(clockOrient);
+    lcd->fillScreen(p.bg);
+    lcd->setTextDatum(MC_DATUM);
+    lcd->setTextSize(1);
+    lcd->setTextColor(p.textDim, p.bg);
+    lcd->drawString("BLUETOOTH PAIRING", lcd->width() / 2, 40);
+    lcd->drawString("enter on desktop:", lcd->width() / 2, lcd->height() - 40);
+    lcd->setTextSize(4);
+    lcd->setTextColor(p.text, p.bg);
+    char b[8];
+    snprintf(b, sizeof(b), "%06lu", (unsigned long)currentPasskey);
+    lcd->drawString(b, lcd->width() / 2, lcd->height() / 2);
+  }
 }
 
 void drawInfo() {
@@ -757,7 +793,8 @@ void drawInfo() {
   if (clockOrient != 0) {
     static uint32_t lastDraw = 0;
     bool force = wasInMenu != (menuOpen || settingsOpen || resetOpen);
-    if (!force && millis() - lastDraw < 33) return; // Limit to ~30fps
+    if (!force && millis() - lastDraw < 33)
+      return; // Limit to ~30fps
     lastDraw = millis();
 
     hal_get_lcd()->setRotation(clockOrient);
@@ -772,7 +809,8 @@ void drawInfo() {
     txtSpr.printf("INFO %u/%u", infoPage + 1, INFO_PAGES);
     txtSpr.drawFastHLine(5, 20, 140, p.textDim);
 
-    auto gridLn = [&](int col, int row, const char* label, const char* val, uint16_t valCol = 0) {
+    auto gridLn = [&](int col, int row, const char *label, const char *val,
+                      uint16_t valCol = 0) {
       int x = (col == 0) ? 10 : 80;
       int y = 30 + row * 22;
       txtSpr.setTextColor(p.textDim, p.bg);
@@ -788,13 +826,18 @@ void drawInfo() {
       gridLn(0, 0, "OWNER", ownerName()[0] ? ownerName() : "none");
       gridLn(1, 0, "PET", petName());
       int vBat_mV = (int)(hal_get_battery_voltage() * 1000);
-      char batBuf[16]; snprintf(batBuf, sizeof(batBuf), "%d.%02dV", vBat_mV / 1000, (vBat_mV % 1000) / 10);
+      char batBuf[16];
+      snprintf(batBuf, sizeof(batBuf), "%d.%02dV", vBat_mV / 1000,
+               (vBat_mV % 1000) / 10);
       gridLn(0, 1, "BATTERY", batBuf);
       bool usb = hal_is_on_usb();
-      gridLn(1, 1, "POWER", usb ? (vBat_mV > 4100 ? "FULL" : "USB") : "BAT", usb ? GREEN : p.text);
-      gridLn(0, 2, "BLE", bleConnected() ? "CONNECTED" : "DISC", bleConnected() ? GREEN : HOT);
+      gridLn(1, 1, "POWER", usb ? (vBat_mV > 4100 ? "FULL" : "USB") : "BAT",
+             usb ? GREEN : p.text);
+      gridLn(0, 2, "BLE", bleConnected() ? "CONNECTED" : "DISC",
+             bleConnected() ? GREEN : HOT);
       uint32_t up = millis() / 1000;
-      char upBuf[16]; snprintf(upBuf, sizeof(upBuf), "%luh%02um", up / 3600, (up / 60) % 60);
+      char upBuf[16];
+      snprintf(upBuf, sizeof(upBuf), "%luh%02um", up / 3600, (up / 60) % 60);
       gridLn(1, 2, "UPTIME", upBuf);
       gridLn(0, 3, "MOOD", stateNames[activeState]);
       gridLn(1, 3, "BT NAME", btName);
@@ -802,52 +845,72 @@ void drawInfo() {
     } else if (infoPage == 1) {
       // 2. Buttons Guide
       txtSpr.setTextColor(p.text, p.bg);
-      txtSpr.setCursor(10, 30); txtSpr.print("BTN A: FRONT");
+      txtSpr.setCursor(10, 30);
+      txtSpr.print("BTN A: FRONT");
       txtSpr.setTextColor(p.textDim, p.bg);
-      txtSpr.setCursor(15, 40); txtSpr.print("- TAP:  SCREEN/OK");
-      txtSpr.setCursor(15, 50); txtSpr.print("- HOLD: MENU");
+      txtSpr.setCursor(15, 40);
+      txtSpr.print("- TAP:  SCREEN/OK");
+      txtSpr.setCursor(15, 50);
+      txtSpr.print("- HOLD: MENU");
       txtSpr.setTextColor(p.text, p.bg);
-      txtSpr.setCursor(10, 65); txtSpr.print("BTN B: SIDE");
+      txtSpr.setCursor(10, 65);
+      txtSpr.print("BTN B: SIDE");
       txtSpr.setTextColor(p.textDim, p.bg);
-      txtSpr.setCursor(15, 75); txtSpr.print("- TAP:  NEXT/NO");
-      txtSpr.setCursor(15, 85); txtSpr.print("- HOLD: ROTATE");
+      txtSpr.setCursor(15, 75);
+      txtSpr.print("- TAP:  NEXT/NO");
+      txtSpr.setCursor(15, 85);
+      txtSpr.print("- HOLD: ROTATE");
 
     } else if (infoPage == 2) {
       // 3. Bluetooth Detail
       gridLn(0, 0, "NAME", btName);
-      uint8_t mac[6] = {0}; esp_read_mac(mac, ESP_MAC_BT);
-      char macB[20]; snprintf(macB, sizeof(macB), "%02X:%02X:%02X:%02X", mac[2], mac[3], mac[4], mac[5]);
+      uint8_t mac[6] = {0};
+      esp_read_mac(mac, ESP_MAC_BT);
+      char macB[20];
+      snprintf(macB, sizeof(macB), "%02X:%02X:%02X:%02X", mac[2], mac[3],
+               mac[4], mac[5]);
       gridLn(0, 1, "MAC (SHORT)", macB);
-      gridLn(0, 2, "SECURITY", bleConnected() ? (bleSecure() ? "SECURE" : "OPEN") : "N/A");
+      gridLn(0, 2, "SECURITY",
+             bleConnected() ? (bleSecure() ? "SECURE" : "OPEN") : "N/A");
       gridLn(0, 3, "BONDED", bleConnected() ? "YES" : "NO");
 
     } else if (infoPage == 3) {
       // 4. Claude Stats
       gridLn(0, 0, "SESSIONS", String(tama.sessionsTotal).c_str());
       gridLn(1, 0, "RUNNING", String(tama.sessionsRunning).c_str());
-      gridLn(0, 1, "WAITING", String(tama.sessionsWaiting).c_str(), tama.sessionsWaiting > 0 ? HOT : p.text);
+      gridLn(0, 1, "WAITING", String(tama.sessionsWaiting).c_str(),
+             tama.sessionsWaiting > 0 ? HOT : p.text);
       uint32_t age = (millis() - tama.lastUpdated) / 1000;
-      char ageB[16]; snprintf(ageB, sizeof(ageB), "%lus ago", (unsigned long)age);
+      char ageB[16];
+      snprintf(ageB, sizeof(ageB), "%lus ago", (unsigned long)age);
       gridLn(0, 2, "LAST MSG", ageB);
 
     } else if (infoPage == 4) {
       // 5. Credits
       txtSpr.setTextColor(p.textDim, p.bg);
-      txtSpr.setCursor(10, 30); txtSpr.print("original by:");
+      txtSpr.setCursor(10, 30);
+      txtSpr.print("original by:");
       txtSpr.setTextColor(p.text, p.bg);
-      txtSpr.setCursor(10, 40); txtSpr.print("Felix Rieseberg");
-      
+      txtSpr.setCursor(10, 40);
+      txtSpr.print("Felix Rieseberg");
+
       txtSpr.setTextColor(p.textDim, p.bg);
-      txtSpr.setCursor(10, 55); txtSpr.print("modified by:");
+      txtSpr.setCursor(10, 55);
+      txtSpr.print("modified by:");
       txtSpr.setTextColor(p.text, p.bg);
-      txtSpr.setCursor(10, 65); txtSpr.print("Kai Tsai");
-      
+      txtSpr.setCursor(10, 65);
+      txtSpr.print("Kai Tsai");
+
       txtSpr.setTextColor(p.textDim, p.bg);
-      txtSpr.setCursor(10, 85); txtSpr.print("source:");
+      txtSpr.setCursor(10, 85);
+      txtSpr.print("source:");
       txtSpr.setTextColor(p.text, p.bg);
-      txtSpr.setCursor(10, 95); txtSpr.print("github.com/oh001738/");
-      txtSpr.setCursor(10, 105); txtSpr.print("claude-desktop-buddy-");
-      txtSpr.setCursor(10, 115); txtSpr.print("for-tdisplay-s3");
+      txtSpr.setCursor(10, 95);
+      txtSpr.print("github.com/oh001738/");
+      txtSpr.setCursor(10, 105);
+      txtSpr.print("claude-desktop-buddy-");
+      txtSpr.setCursor(10, 115);
+      txtSpr.print("for-tdisplay-s3");
     } else {
       // 6. About
       txtSpr.setCursor(10, 30);
@@ -950,8 +1013,10 @@ void drawInfo() {
 
     int vBat_mV = (int)(hal_get_battery_voltage() * 1000);
     int pct = (vBat_mV - 3200) / 10;
-    if (pct < 0) pct = 0;
-    if (pct > 100) pct = 100;
+    if (pct < 0)
+      pct = 0;
+    if (pct > 100)
+      pct = 100;
     bool usb = hal_is_on_usb();
 
     spr.setTextColor(p.text, p.bg);
@@ -969,7 +1034,8 @@ void drawInfo() {
     spr.setTextColor(p.text, p.bg);
     ln("SYSTEM");
     spr.setTextColor(p.textDim, p.bg);
-    if (ownerName()[0]) ln("  owner    %s", ownerName());
+    if (ownerName()[0])
+      ln("  owner    %s", ownerName());
     uint32_t up = millis() / 1000;
     ln("  uptime   %luh %02lum", up / 3600, (up / 60) % 60);
 
@@ -999,7 +1065,6 @@ void drawInfo() {
     ln("Felix Rieseberg");
   }
 }
-
 
 // Greedy word-wrap into fixed-width rows. Continuation rows get a leading
 // space. Returns number of rows written.
@@ -1264,7 +1329,8 @@ void drawPet() {
   if (clockOrient != 0) {
     static uint32_t lastDraw = 0;
     bool force = wasInMenu != (menuOpen || settingsOpen || resetOpen);
-    if (!force && millis() - lastDraw < 33) return; // Limit to ~30fps
+    if (!force && millis() - lastDraw < 33)
+      return; // Limit to ~30fps
     lastDraw = millis();
 
     hal_get_lcd()->setRotation(clockOrient);
@@ -1281,7 +1347,7 @@ void drawPet() {
 
     if (petPage == 0) {
       // Draw Stats in Grid
-      auto statBar = [&](int y, const char* label, int val, int maxVal) {
+      auto statBar = [&](int y, const char *label, int val, int maxVal) {
         txtSpr.setTextColor(p.textDim, p.bg);
         txtSpr.setCursor(10, y);
         txtSpr.print(label);
@@ -1294,7 +1360,7 @@ void drawPet() {
       statBar(30, "HAPPINESS", 4, 5);
       statBar(60, "HUNGER", 3, 5);
       statBar(90, "ENERGY", 5, 5);
-      
+
       txtSpr.setTextColor(p.text, p.bg);
       txtSpr.setCursor(10, 130);
       txtSpr.printf("MOOD: %s", stateNames[activeState]);
@@ -1408,8 +1474,6 @@ void drawHUD() {
 }
 
 void setup() {
-  Serial.setRxBufferSize(2048);
-  Serial.begin(115200);
   hal_init();
   LittleFS.begin();
   startBt();
@@ -1427,7 +1491,7 @@ void setup() {
   spr.createSprite(W, H);
   petSpr.createSprite(170, 170);
   txtSpr.createSprite(150, 170);
-  characterInit(nullptr); 
+  characterInit(nullptr);
   gifAvailable = characterLoaded();
   Serial.printf("GIF Pet Available: %s\n", gifAvailable ? "YES" : "NO");
 
@@ -1437,7 +1501,7 @@ void setup() {
   if (buddyMode && savedSpecies < buddySpeciesCount()) {
     buddySetSpeciesIdx(savedSpecies);
   }
-  
+
   applyDisplayMode();
   clockUpdateOrient(); // Load saved orientation
 
@@ -1447,11 +1511,11 @@ void setup() {
     lcd->setRotation(clockOrient);
     lcd->fillScreen(p.bg);
     applyBrightness(); // 燈在這時候才點亮，此時畫面已經是乾淨的了
-    
+
     // Use LCD dimensions for centering
     int sw = lcd->width();
     int sh = lcd->height();
-    
+
     lcd->setTextDatum(MC_DATUM);
     lcd->setTextSize(2);
     if (ownerName()[0]) {
@@ -1470,7 +1534,7 @@ void setup() {
     }
     lcd->setTextDatum(TL_DATUM);
     lcd->setTextSize(1);
-    delay(800); // Slightly longer for easier reading
+    delay(800);          // Slightly longer for easier reading
     lcd->setRotation(0); // Reset for main sprite path
   }
 
@@ -1480,6 +1544,7 @@ void setup() {
 
 void loop() {
   hal_loop();
+  static bool wasPasskey = false;
   uint32_t now = millis();
   bool btnA = hal_btn_a_clicked();
   bool btnB = hal_btn_b_clicked();
@@ -1739,39 +1804,39 @@ void loop() {
   if (napping || screenOff || landscapeClock) {
     // skip sprite render — face-down, powered off, or landscape clock
     // (which draws direct-to-LCD below)
-  } else  // In landscape mode, the dedicated drawInfo/drawPet/drawClock handle 
-  // their own pet rendering to ensure proper scaling and positioning.
-  // We only run the background ticks in portrait (normal) mode.
-  if (clockOrient == 0) {
-    if (buddyMode)
-      buddyTick(activeState);
-    else if (characterLoaded()) {
-      characterSetState(activeState);
-      characterTick();
-    }
-  } else {
-    const Palette &p = characterPalette();
-    spr.fillSprite(p.bg);
-    spr.setTextColor(p.textDim, p.bg);
-    spr.setTextSize(1);
-    if (xferActive()) {
-      uint32_t done = xferProgress(), total = xferTotal();
-      spr.setCursor(8, 90);
-      spr.print("installing");
-      spr.setCursor(8, 102);
-      spr.printf("%luK / %luK", done / 1024, total / 1024);
-      int barW = W - 16;
-      spr.drawRect(8, 116, barW, 8, p.textDim);
-      if (total > 0) {
-        int fill = (int)((uint64_t)barW * done / total);
-        if (fill > 1)
-          spr.fillRect(9, 117, fill - 1, 6, p.body);
+  } else // In landscape mode, the dedicated drawInfo/drawPet/drawClock handle
+    // their own pet rendering to ensure proper scaling and positioning.
+    // We only run the background ticks in portrait (normal) mode.
+    if (clockOrient == 0) {
+      if (buddyMode)
+        buddyTick(activeState);
+      else if (characterLoaded()) {
+        characterSetState(activeState);
+        characterTick();
       }
     } else {
-      spr.setCursor(8, 100);
-      spr.print("no character loaded");
+      const Palette &p = characterPalette();
+      spr.fillSprite(p.bg);
+      spr.setTextColor(p.textDim, p.bg);
+      spr.setTextSize(1);
+      if (xferActive()) {
+        uint32_t done = xferProgress(), total = xferTotal();
+        spr.setCursor(8, 90);
+        spr.print("installing");
+        spr.setCursor(8, 102);
+        spr.printf("%luK / %luK", done / 1024, total / 1024);
+        int barW = W - 16;
+        spr.drawRect(8, 116, barW, 8, p.textDim);
+        if (total > 0) {
+          int fill = (int)((uint64_t)barW * done / total);
+          if (fill > 1)
+            spr.fillRect(9, 117, fill - 1, 6, p.body);
+        }
+      } else {
+        spr.setCursor(8, 100);
+        spr.print("no character loaded");
+      }
     }
-  }
   // Passkey is a global priority: wake and render even if screen was off
   if (blePasskey()) {
     if (screenOff || napping) {
@@ -1780,9 +1845,12 @@ void loop() {
       hal_set_brightness(brightLevel);
     }
     drawPasskey();
-    hal_get_lcd()->setRotation(0);
-    spr.pushSprite(0, 0);
+    wasPasskey = true;
   } else if (!napping && !screenOff) {
+    if (wasPasskey) {
+      hal_get_lcd()->fillScreen(characterPalette().bg);
+      wasPasskey = false;
+    }
     if (menuOpen || settingsOpen || resetOpen) {
       if (clockOrient == 0) {
         hal_get_lcd()->setRotation(0);
