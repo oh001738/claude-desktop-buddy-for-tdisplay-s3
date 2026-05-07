@@ -129,8 +129,10 @@ void bleInit(const char* deviceName) {
   adv->setScanResponse(true);
   adv->setMinPreferred(0x06);   // iOS-friendly connection interval
   adv->setMaxPreferred(0x12);
+  
+  // Start advertising with no timeout
   BLEDevice::startAdvertising();
-  Serial.printf("[ble] advertising as '%s'\n", deviceName);
+  Serial.printf("[ble] advertising as '%s' (no timeout)\n", deviceName);
 }
 
 bool bleConnected() { return connected; }
