@@ -190,8 +190,8 @@ const char *settingsItems[] = {
     "transcript", "clock rot", "ascii pet", "reset", "back"};
 const uint8_t SETTINGS_N = 10;
 static bool isSettingVisible(uint8_t i) {
-  if (i == 1 || i == 4)
-    return false; // Hide sound and led
+  if (i == 1 || i == 3 || i == 4)
+    return false; // Hide sound, wifi and led
   return true;
 }
 
@@ -1297,31 +1297,39 @@ void setup() {
   // through to buddyInit()'s clamped default.
   buddyMode = !(gifAvailable && speciesIdxLoad() == SPECIES_GIF);
   applyDisplayMode();
+  clockUpdateOrient(); // Load saved orientation
 
   {
     const Palette &p = characterPalette();
-    spr.fillSprite(p.bg);
-    spr.setTextDatum(MC_DATUM);
-    spr.setTextSize(2);
+    auto lcd = hal_get_lcd();
+    lcd->setRotation(clockOrient);
+    lcd->fillScreen(p.bg);
+    applyBrightness(); // 燈在這時候才點亮，此時畫面已經是乾淨的了
+    
+    // Use LCD dimensions for centering
+    int sw = lcd->width();
+    int sh = lcd->height();
+    
+    lcd->setTextDatum(MC_DATUM);
+    lcd->setTextSize(2);
     if (ownerName()[0]) {
       char line[40];
       snprintf(line, sizeof(line), "%s's", ownerName());
-      spr.setTextColor(p.text, p.bg);
-      spr.drawString(line, W / 2, H / 2 - 12);
-      spr.setTextColor(p.body, p.bg);
-      spr.drawString(petName(), W / 2, H / 2 + 12);
+      lcd->setTextColor(p.text, p.bg);
+      lcd->drawString(line, sw / 2, sh / 2 - 12);
+      lcd->setTextColor(p.body, p.bg);
+      lcd->drawString(petName(), sw / 2, sh / 2 + 12);
     } else {
-      // First boot, no owner pushed yet — say hi.
-      spr.setTextColor(p.body, p.bg);
-      spr.drawString("Hello!", W / 2, H / 2 - 12);
-      spr.setTextSize(1);
-      spr.setTextColor(p.textDim, p.bg);
-      spr.drawString("a buddy appears", W / 2, H / 2 + 12);
+      lcd->setTextColor(p.body, p.bg);
+      lcd->drawString("Hello!", sw / 2, sh / 2 - 12);
+      lcd->setTextSize(1);
+      lcd->setTextColor(p.textDim, p.bg);
+      lcd->drawString("a buddy appears", sw / 2, sh / 2 + 12);
     }
-    spr.setTextDatum(TL_DATUM);
-    spr.setTextSize(1);
-    spr.pushSprite(0, 0);
-    delay(500);
+    lcd->setTextDatum(TL_DATUM);
+    lcd->setTextSize(1);
+    delay(800); // Slightly longer for easier reading
+    lcd->setRotation(0); // Reset for main sprite path
   }
 
   Serial.printf("buddy: %s\n",

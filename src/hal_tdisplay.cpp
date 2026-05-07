@@ -44,6 +44,10 @@ lcd_cmd_t lcd_st7789v[] = {
 };
 
 void hal_init() {
+    // Force backlight off immediately to prevent seeing hardware garbage
+    pinMode(PIN_LCD_BL, OUTPUT);
+    digitalWrite(PIN_LCD_BL, LOW);
+
     // Power on the screen
     pinMode(PIN_POWER_ON, OUTPUT);
     digitalWrite(PIN_POWER_ON, HIGH);
@@ -61,11 +65,12 @@ void hal_init() {
 
     tft.setRotation(0); // Portrait (170x320)
     tft.setSwapBytes(true);
+    tft.fillScreen(TFT_BLACK); // Clear the internal frame buffer while backlight is still off
     
     // Backlight PWM initialization
     ledcSetup(0, 5000, 8); // Channel 0, 5000Hz, 8-bit resolution
     ledcAttachPin(PIN_LCD_BL, 0);
-    ledcWrite(0, 255); // Default full brightness
+    ledcWrite(0, 0); // Keep it off until setup() is ready
 
     // Buttons
     pinMode(PIN_BUTTON_1, INPUT_PULLUP);
