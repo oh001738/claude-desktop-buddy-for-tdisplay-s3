@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Buddy T-Display S3 Landscape Simulator</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Outfit:wght@300;600&display=swap');
+
+        :root {
+            --bg-color: #0d0d0d;
+            --panel-color: #1a1a1a;
+            --accent-color: #00ff9d;
+            --text-color: #ffffff;
+            --text-dim: #888888;
+            --hot-color: #ff4d4d;
+        }
+
+        body {
+            background: #1a1a1b;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            font-family: 'Outfit', sans-serif;
+            color: var(--text-color);
+        }
+
+        .device-container {
+            position: relative;
+            background: #222;
+            padding: 30px 60px;
+            border-radius: 20px;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.5), inset 0 2px 5px rgba(255,255,255,0.1);
+            border: 2px solid #333;
+        }
+
+        /* Screen Simulation */
+        .screen {
+            width: 320px;
+            height: 170px;
+            background: var(--bg-color);
+            border: 4px solid #111;
+            border-radius: 4px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0,255,157,0.1);
+        }
+
+        /* Landscape Layout */
+        .layout-main {
+            display: flex;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Left: Pet Area */
+        .pet-area {
+            width: 140px;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-right: 1px solid #222;
+            position: relative;
+        }
+
+        .pet-sprite {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            line-height: 1.1;
+            color: var(--accent-color);
+            white-space: pre;
+            animation: bounce 2s infinite ease-in-out;
+        }
+
+        /* Right: Info Area */
+        .info-area {
+            flex: 1;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .clock-block {
+            text-align: center;
+        }
+
+        .time {
+            font-size: 32px;
+            font-weight: 600;
+            margin: 0;
+            letter-spacing: 2px;
+        }
+
+        .date {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-top: -5px;
+        }
+
+        .transcript-block {
+            background: rgba(255,255,255,0.03);
+            border-radius: 4px;
+            padding: 5px;
+            height: 45px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .marquee {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            white-space: nowrap;
+            position: absolute;
+            animation: marquee-scroll 10s linear infinite;
+        }
+
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: var(--text-dim);
+            border-top: 1px solid #222;
+            padding-top: 5px;
+        }
+
+        /* Info Page Overlays */
+        .overlay-page {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-color);
+            padding: 15px;
+            box-sizing: border-box;
+            display: none;
+            z-index: 10;
+        }
+
+        .overlay-page.active {
+            display: block;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 12px;
+        }
+
+        .info-item b { color: var(--accent-color); }
+
+        /* Settings Menu */
+        .menu-overlay {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 140px;
+            background: var(--panel-color);
+            border: 1px solid var(--text-dim);
+            border-radius: 6px;
+            padding: 8px;
+            display: none;
+            z-index: 20;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.8);
+        }
+
+        .menu-item {
+            font-size: 12px;
+            padding: 4px 8px;
+            color: var(--text-dim);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .menu-item.selected {
+            color: var(--text-color);
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+        }
+
+        .menu-item.selected::before {
+            content: '>';
+            margin-right: 5px;
+        }
+
+        /* Hardware Buttons */
+        .button {
+            position: absolute;
+            background: #444;
+            border: none;
+            cursor: pointer;
+            transition: transform 0.1s, background 0.3s;
+            box-shadow: 0 4px 0 #222;
+        }
+
+        .button:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #111;
+        }
+
+        .btn-a {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            bottom: -50px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(145deg, #555, #333);
+        }
+
+        .btn-b {
+            width: 25px;
+            height: 40px;
+            border-radius: 4px;
+            right: -40px;
+            top: 40px;
+            background: linear-gradient(145deg, #555, #333);
+        }
+
+        .label {
+            position: absolute;
+            font-size: 10px;
+            color: #666;
+            text-transform: uppercase;
+        }
+
+        .label-a { bottom: -70px; left: 50%; transform: translateX(-50%); }
+        .label-b { right: -40px; top: 85px; }
+
+        /* Animations */
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+
+        @keyframes marquee-scroll {
+            0% { left: 100%; }
+            100% { left: -150%; }
+        }
+
+        .nav-hints {
+            margin-top: 80px;
+            font-size: 14px;
+            color: var(--text-dim);
+            text-align: center;
+        }
+
+        kbd {
+            background: #333;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: var(--accent-color);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="device-container">
+        <div class="screen" id="screen">
+            <!-- Main Landscape HUD -->
+            <div class="layout-main" id="mode-normal">
+                <div class="pet-area">
+                    <div class="pet-sprite">
+  /\_/\  
+ ( o.o ) 
+  > ^ <  
+ (     ) 
+  u---u  
+                    </div>
+                </div>
+                <div class="info-area">
+                    <div class="clock-block">
+                        <div class="time" id="clock">14:23</div>
+                        <div class="date">THU MAY 07</div>
+                    </div>
+                    <div class="transcript-block">
+                        <div class="marquee">Claude: 我正在幫你分析程式碼邏輯... [OK]</div>
+                    </div>
+                    <div class="status-row">
+                        <span>BT: <b style="color:var(--accent-color)">ON</b></span>
+                        <span>BAT: 4.1V</span>
+                        <span>WIFI: OFF</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Landscape Info Page -->
+            <div class="overlay-page" id="mode-info">
+                <div style="display:flex; justify-content: space-between; border-bottom: 1px solid #333; padding-bottom: 5px; margin-bottom: 10px;">
+                    <span style="color:var(--accent-color); font-weight: bold;">SYSTEM INFO</span>
+                    <span style="color:var(--text-dim)">1/3</span>
+                </div>
+                <div class="info-grid">
+                    <div class="info-item"><b>OWNER:</b> KAI</div>
+                    <div class="info-item"><b>PET:</b> BUDDY</div>
+                    <div class="info-item"><b>FIRMWARE:</b> v1.2.0</div>
+                    <div class="info-item"><b>MEM:</b> 128KB FREE</div>
+                    <div class="info-item"><b>BLE:</b> CONNECTED</div>
+                    <div class="info-item"><b>UPTIME:</b> 04:12:33</div>
+                </div>
+                <div style="margin-top: 15px; font-size: 10px; color: var(--text-dim); text-align: center;">
+                    Press B for next page
+                </div>
+            </div>
+
+            <!-- Settings Menu -->
+            <div class="menu-overlay" id="menu-settings">
+                <div class="menu-item selected">BRIGHTNESS <span>4/4</span></div>
+                <div class="menu-item">SOUND <span>OFF</span></div>
+                <div class="menu-item">BT <span>ON</span></div>
+                <div class="menu-item">TRANSCRIPT <span>ON</span></div>
+                <div class="menu-item">RESET</div>
+                <div class="menu-item">CLOSE</div>
+            </div>
+        </div>
+
+        <!-- Hardware Buttons -->
+        <button class="button btn-a" onclick="handleBtnA()"></button>
+        <span class="label label-a">Btn A</span>
+
+        <button class="button btn-b" onclick="handleBtnB()"></button>
+        <span class="label label-b">Btn B</span>
+    </div>
+
+    <div class="nav-hints">
+        操作模擬：<br>
+        <kbd>Btn A (短按)</kbd> 切換 <b>寵物 / 系統資訊</b><br>
+        <kbd>Btn A (長按)</kbd> 開啟 <b>設定選單</b><br>
+        <kbd>Btn B (短按)</kbd> 在選單中 <b>向下移動</b>
+    </div>
+
+    <script>
+        let currentMode = 'normal'; // 'normal', 'info'
+        let menuOpen = false;
+        let menuIdx = 0;
+
+        function updateClock() {
+            const now = new Date();
+            const h = String(now.getHours()).padStart(2, '0');
+            const m = String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('clock').innerText = `${h}:${m}`;
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        function handleBtnA() {
+            if (menuOpen) {
+                // Confirm in menu
+                if (menuIdx === 5) closeMenu();
+                return;
+            }
+
+            // Toggle modes
+            if (currentMode === 'normal') {
+                currentMode = 'info';
+                document.getElementById('mode-normal').style.display = 'none';
+                document.getElementById('mode-info').classList.add('active');
+            } else {
+                currentMode = 'normal';
+                document.getElementById('mode-normal').style.display = 'flex';
+                document.getElementById('mode-info').classList.remove('active');
+            }
+        }
+
+        // Simulate Long Press for Menu on Btn A
+        let btnATimer;
+        const btnA = document.querySelector('.btn-a');
+        btnA.onmousedown = () => {
+            btnATimer = setTimeout(() => {
+                openMenu();
+            }, 800);
+        };
+        btnA.onmouseup = () => clearTimeout(btnATimer);
+
+        function handleBtnB() {
+            if (menuOpen) {
+                // Move selection
+                const items = document.querySelectorAll('.menu-item');
+                items[menuIdx].classList.remove('selected');
+                menuIdx = (menuIdx + 1) % items.length;
+                items[menuIdx].classList.add('selected');
+                return;
+            }
+
+            // Other functions in normal mode
+            alert("Btn B: 切換橫向角度 / 拒絕授權");
+        }
+
+        function openMenu() {
+            menuOpen = true;
+            document.getElementById('menu-settings').style.display = 'block';
+        }
+
+        function closeMenu() {
+            menuOpen = false;
+            document.getElementById('menu-settings').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
