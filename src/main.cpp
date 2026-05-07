@@ -1408,6 +1408,7 @@ void drawHUD() {
 }
 
 void setup() {
+  Serial.setRxBufferSize(2048);
   Serial.begin(115200);
   hal_init();
   LittleFS.begin();

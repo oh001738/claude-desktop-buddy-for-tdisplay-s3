@@ -445,13 +445,31 @@
 
                     const buffer = await f.file.arrayBuffer();
                     const bytes = new Uint8Array(buffer);
-                    const chunkSize = 200;
+                    const chunkSize = 128; // 縮小到 128 以確保不會塞滿 Serial Buffer
+                    let fileUploaded = 0;
+
                     for (let i = 0; i < bytes.length; i += chunkSize) {
                         const chunk = bytes.slice(i, i + chunkSize);
                         const b64 = btoa(String.fromCharCode.apply(null, chunk));
-                        const chunkRes = await sendCommand({ cmd: "chunk", d: b64 });
-                        if (!chunkRes.ok) throw new Error(`${f.name} 傳輸失敗`);
+                        let success = false;
+                        for (let retry = 0; retry < 3; retry++) {
+                            const chunkRes = await sendCommand({ cmd: "chunk", d: b64 });
+                            if (chunkRes.ok) {
+                                success = true;
+                                break;
+                            }
+                            log(`... ${f.name} 塊傳輸重試 (${retry + 1}/3)`);
+                        }
+                        if (!success) throw new Error(`${f.name} 傳輸失敗`);
+
                         uploaded += chunk.length;
+                        fileUploaded += chunk.length;
+
+                        // 每傳 20% 顯示一次進度
+                        if (Math.floor((fileUploaded - chunkSize) / (f.file.size / 5)) < Math.floor(fileUploaded / (f.file.size / 5))) {
+                            log(`... ${f.name} 已完成 ${Math.round(fileUploaded / f.file.size * 100)}%`);
+                        }
+
                         const pct = Math.round((uploaded / totalSize) * 100);
                         document.getElementById('progress-fill').style.width = pct + '%';
                         document.getElementById('progress-detail').textContent = `${Math.round(uploaded / 1024)}K / ${Math.round(totalSize / 1024)}K (${pct}%)`;
