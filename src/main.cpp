@@ -84,20 +84,30 @@ const uint8_t SPECIES_GIF = 0xFF; // species NVS sentinel: use the installed GIF
 // Cycle GIF (if installed) → ASCII species 0..N-1 → GIF. Persisted to the
 // existing "species" NVS key; 0xFF means GIF mode.
 static void nextPet() {
-  uint8_t n = buddySpeciesCount();
-  if (!buddyMode) { // GIF → species 0
+  if (buddyMode) {
+    if (buddySpeciesIdx() + 1 >= buddySpeciesCount()) {
+      if (gifAvailable) {
+        buddyMode = false;
+        speciesIdxSave(SPECIES_GIF);
+        characterInvalidate();
+        characterSetState(activeState);
+        Serial.println("Switching to GIF mode");
+      } else {
+        buddySetSpeciesIdx(0);
+        speciesIdxSave(0);
+        Serial.println("No GIF, back to ASCII 0");
+      }
+    } else {
+      buddyNextSpecies();
+      Serial.printf("Next ASCII pet: %u\n", buddySpeciesIdx());
+    }
+  } else {
     buddyMode = true;
     buddySetSpeciesIdx(0);
     speciesIdxSave(0);
-  } else if (buddySpeciesIdx() + 1 >= n && gifAvailable) { // last species → GIF
-    buddyMode = false;
-    speciesIdxSave(SPECIES_GIF);
-  } else { // species i → species i+1
-    buddyNextSpecies();
+    Serial.println("Back to ASCII mode from GIF");
   }
   characterInvalidate();
-  if (buddyMode)
-    buddyInvalidate();
 }
 uint32_t wakeTransitionUntil = 0;
 const uint32_t SCREEN_OFF_MS = 30000;
@@ -1415,12 +1425,17 @@ void setup() {
   spr.createSprite(W, H);
   petSpr.createSprite(170, 170);
   txtSpr.createSprite(150, 170);
-  characterInit(nullptr); // scan /characters/ for whatever is installed
+  characterInit(nullptr); 
   gifAvailable = characterLoaded();
-  // species NVS: 0..N-1 = ASCII species, 0xFF = use GIF (also the default,
-  // so a fresh install lands on the GIF). With no GIF installed, 0xFF falls
-  // through to buddyInit()'s clamped default.
-  buddyMode = !(gifAvailable && speciesIdxLoad() == SPECIES_GIF);
+  Serial.printf("GIF Pet Available: %s\n", gifAvailable ? "YES" : "NO");
+
+  // species NVS: 0..N-1 = ASCII species, 0xFF = use GIF
+  uint8_t savedSpecies = speciesIdxLoad();
+  buddyMode = !(gifAvailable && savedSpecies == SPECIES_GIF);
+  if (buddyMode && savedSpecies < buddySpeciesCount()) {
+    buddySetSpeciesIdx(savedSpecies);
+  }
+  
   applyDisplayMode();
   clockUpdateOrient(); // Load saved orientation
 
