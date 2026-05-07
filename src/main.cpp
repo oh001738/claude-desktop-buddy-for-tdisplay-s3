@@ -127,8 +127,12 @@ const uint8_t INFO_PG_CREDITS = 5;
 void drawPet();
 void drawHUD();
 static void clockUpdateOrient();
+static void renderLandscapePet(int cx, int cy, bool force = false);
 
-void applyDisplayMode() {
+static bool wasInMenu = false;
+static uint8_t wasDisplayMode = DISP_NORMAL;
+
+static void applyDisplayMode() {
   bool peek = displayMode != DISP_NORMAL;
   characterSetPeek(peek);
   buddySetPeek(peek);
@@ -266,10 +270,7 @@ static void drawSettings() {
   const Palette& p = characterPalette();
   if (clockOrient != 0) {
     hal_get_lcd()->setRotation(clockOrient);
-    petSpr.fillSprite(p.bg);
-    if (buddyMode) buddyRenderTo(&petSpr, activeState);
-    else { characterSetState(activeState); characterRenderTo(&petSpr, 85, 85); }
-    petSpr.pushSprite(0, 0);
+    renderLandscapePet(85, 85, wasInMenu != (menuOpen||settingsOpen||resetOpen));
 
     txtSpr.fillSprite(p.bg);
     int mx = 5, my = 15, mw = 140;
@@ -347,10 +348,7 @@ static void drawReset() {
   const Palette& p = characterPalette();
   if (clockOrient != 0) {
     hal_get_lcd()->setRotation(clockOrient);
-    petSpr.fillSprite(p.bg);
-    if (buddyMode) buddyRenderTo(&petSpr, activeState);
-    else { characterSetState(activeState); characterRenderTo(&petSpr, 85, 85); }
-    petSpr.pushSprite(0, 0);
+    renderLandscapePet(85, 85, wasInMenu != (menuOpen||settingsOpen||resetOpen));
 
     txtSpr.fillSprite(p.bg);
     int mx = 5, my = 60;
@@ -401,15 +399,34 @@ void menuConfirm() {
   }
 }
 
+static void renderLandscapePet(int cx, int cy, bool force) {
+  bool inMenu = menuOpen || settingsOpen || resetOpen;
+  bool updated = false;
+
+  if (buddyMode) {
+    static uint32_t lastBuddyTick = 0;
+    if (millis() - lastBuddyTick >= 100 || force) {
+      lastBuddyTick = millis();
+      petSpr.fillSprite(characterPalette().bg);
+      buddyRenderTo(&petSpr, activeState);
+      updated = true;
+    }
+  } else {
+    if (force) characterInvalidate(); // Reset GIF decoder on state change to force redraw
+    updated = characterRenderTo(&petSpr, cx, cy);
+  }
+
+  if (updated) {
+    petSpr.pushSprite(0, 0);
+  }
+}
+
 void drawMenu() {
   const Palette& p = characterPalette();
   if (clockOrient != 0) {
     // --- Landscape Main Menu ---
     hal_get_lcd()->setRotation(clockOrient);
-    petSpr.fillSprite(p.bg);
-    if (buddyMode) buddyRenderTo(&petSpr, activeState);
-    else { characterSetState(activeState); characterRenderTo(&petSpr, 85, 85); }
-    petSpr.pushSprite(0, 0);
+    renderLandscapePet(85, 85, wasInMenu != (menuOpen||settingsOpen||resetOpen));
 
     txtSpr.fillSprite(p.bg);
     int mx = 5, my = 40;
@@ -492,7 +509,7 @@ static void drawClock() {
   if (clockOrient == 0) {
     paintedOrient = 0;
     // T-Display S3 Portrait Layout: Pet at top, clock centered in lower half
-    spr.fillRect(0, 110, W, H - 110, p.bg);
+    spr.fillRect(0, 150, W, H - 150, p.bg);
     spr.setTextDatum(MC_DATUM);
     spr.setTextSize(5); spr.setTextColor(p.text, p.bg);    spr.drawString(hm, CX, 180);
     spr.setTextSize(2); spr.setTextColor(p.textDim, p.bg); spr.drawString(ss, CX, 225);
@@ -522,19 +539,15 @@ static void drawClock() {
     hal_get_lcd()->setTextSize(1);
   }
 
+  // Draw status message at the bottom center of the right half
+  hal_get_lcd()->setTextDatum(BC_DATUM);
+  hal_get_lcd()->setTextSize(1);
+  hal_get_lcd()->setTextColor(p.textDim, p.bg);
+  hal_get_lcd()->drawString(tama.msg, clockX, 160);
+  hal_get_lcd()->setTextDatum(TL_DATUM);
+
   // Pet on left side (approx 0..140)
-  static uint32_t lastPetTick = 0;
-  if (millis() - lastPetTick >= 200) {
-    lastPetTick = millis();
-    petSpr.fillSprite(p.bg); // Clear background on sprite instead of LCD
-    if (buddyMode) {
-      buddyRenderTo(&petSpr, activeState);
-    } else {
-      characterSetState(activeState);
-      characterRenderTo(&petSpr, 70, 85);
-    }
-    petSpr.pushSprite(0, 0); // Push finished frame to LCD (zero flicker)
-  }
+  renderLandscapePet(70, 85, repaint);
   hal_get_lcd()->setRotation(0);
 }
 
@@ -941,48 +954,16 @@ void drawHUD() {
   const Palette& p = characterPalette();
   
   if (clockOrient != 0) {
-    // --- Landscape HUD: Split Screen (Pet Left, Text Right) ---
-    hal_get_lcd()->setRotation(clockOrient);
+    // --- Landscape HUD: Unified with Clock ---
+    drawClock(); 
     
-    // 1. Render Pet to Left Sprite
-    petSpr.fillSprite(p.bg);
-    if (buddyMode) buddyRenderTo(&petSpr, activeState);
-    else { characterSetState(activeState); characterRenderTo(&petSpr, 85, 85); }
-    petSpr.pushSprite(0, 0);
-    
-    // 2. Render Text to Right (Directly to LCD or via spr offset)
-    const int TX = 175, TW = 140, LH = 10;
-    const int SHOW = 14; // Can show lots of lines!
-    const int WIDTH = 23; // Wrap width for the 140px text area
-    
-    if (tama.lineGen != lastLineGen) { msgScroll = 0; lastLineGen = tama.lineGen; wake(); }
-    
-    if (tama.nLines == 0) {
-      hal_get_lcd()->setTextColor(p.text, p.bg);
-      hal_get_lcd()->setCursor(TX, 80);
-      hal_get_lcd()->print(tama.msg);
-    } else {
-      static char disp[48][32];
-      static uint8_t srcOf[48];
-      uint8_t nDisp = 0;
-      for (uint8_t i = 0; i < tama.nLines && nDisp < 48; i++) {
-        uint8_t got = wrapInto(tama.lines[i], &disp[nDisp], 48 - nDisp, WIDTH);
-        for (uint8_t j = 0; j < got; j++) srcOf[nDisp + j] = i;
-        nDisp += got;
-      }
-      uint8_t maxBack = (nDisp > SHOW) ? (nDisp - SHOW) : 0;
-      if (msgScroll > maxBack) msgScroll = maxBack;
-      int end = (int)nDisp - msgScroll;
-      int start = end - SHOW; if (start < 0) start = 0;
-      for (int i = 0; start + i < end; i++) {
-        uint8_t row = start + i;
-        hal_get_lcd()->setTextColor((srcOf[row] == tama.nLines-1 && msgScroll == 0) ? p.text : p.textDim, p.bg);
-        hal_get_lcd()->setCursor(TX, 15 + i * LH);
-        hal_get_lcd()->print(disp[row]);
-      }
-    }
-    // Final reset of rotation will happen at the loop level or after push
-    hal_get_lcd()->setRotation(0);
+    // drawClock already handled pet, clock and clearing.
+    // Overlay the status message at the bottom center of the right half.
+    hal_get_lcd()->setTextDatum(BC_DATUM);
+    hal_get_lcd()->setTextSize(1);
+    hal_get_lcd()->setTextColor(p.textDim, p.bg);
+    hal_get_lcd()->drawString(tama.msg, 230, 160);
+    hal_get_lcd()->setTextDatum(TL_DATUM);
     return;
   }
 
@@ -1260,14 +1241,19 @@ void loop() {
 
   static bool wasClocking = false;
   static bool wasLandscape = false;
-  if (clocking != wasClocking || landscapeClock != wasLandscape) {
-    if (clocking && !landscapeClock) characterSetPeek(true);
+  bool inMenu = menuOpen || settingsOpen || resetOpen;
+
+  if (clocking != wasClocking || landscapeClock != wasLandscape || (wasInMenu && !inMenu) || (wasDisplayMode != displayMode)) {
+    if (clocking && !landscapeClock) characterSetPeek(buddyMode); 
     else applyDisplayMode();
     characterInvalidate();
     if (buddyMode) buddyInvalidate();
     wasClocking = clocking;
     wasLandscape = landscapeClock;
+    if ((wasInMenu && !inMenu) || (wasDisplayMode != displayMode)) paintedOrient = 0xFF; // Force landscape repaint
   }
+  wasInMenu = inMenu;
+  wasDisplayMode = displayMode;
   if (clocking) {
     uint8_t dow = clockDow();
     bool weekend = (dow == 0 || dow == 6);

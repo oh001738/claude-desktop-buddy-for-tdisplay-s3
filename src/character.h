@@ -25,6 +25,6 @@ void characterClose();   // close GIF + clear loaded flag; FS stays mounted   //
 // Adaptive to actual canvas height — no padding required in source art.
 void characterSetPeek(bool peek);
 class TFT_eSPI;
-void characterRenderTo(TFT_eSPI* tgt, int cx, int cy);
+bool characterRenderTo(TFT_eSPI* tgt, int cx, int cy);
 
 const Palette& characterPalette();
