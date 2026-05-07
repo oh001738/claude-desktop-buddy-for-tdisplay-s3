@@ -745,7 +745,8 @@ void drawPasskey() {
   static uint32_t lastDraw = 0;
   uint32_t currentPasskey = blePasskey();
 
-  // Only redraw if the passkey changed or 1 second has passed (to keep it alive)
+  // Only redraw if the passkey changed or 1 second has passed (to keep it
+  // alive)
   if (currentPasskey == lastPasskey && millis() - lastDraw < 1000)
     return;
   lastPasskey = currentPasskey;
@@ -1357,9 +1358,9 @@ void drawPet() {
         txtSpr.fillRect(11, y + 11, fillW - 2, 6, GREEN);
       };
 
-      statBar(30, "HAPPINESS", 4, 5);
-      statBar(60, "HUNGER", 3, 5);
-      statBar(90, "ENERGY", 5, 5);
+      statBar(30, "MOOD", statsMoodTier(), 4);
+      statBar(60, "FED", statsFedProgress(), 10);
+      statBar(90, "ENERGY", statsEnergyTier(), 5);
 
       txtSpr.setTextColor(p.text, p.bg);
       txtSpr.setCursor(10, 130);
@@ -1474,8 +1475,31 @@ void drawHUD() {
 }
 
 void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  Serial.println("\n[SYSTEM] Kai's Buddy is waking up...");
+  
   hal_init();
-  LittleFS.begin();
+  if (!LittleFS.begin()) {
+    Serial.println("[ERROR] LittleFS Mount Failed!");
+  } else {
+    Serial.printf("[SYSTEM] FS Space: %lu/%lu KB used\n", 
+                  (unsigned long)LittleFS.usedBytes()/1024, 
+                  (unsigned long)LittleFS.totalBytes()/1024);
+    
+    Serial.println("[SYSTEM] Scanning for Pets...");
+    fs::File root = LittleFS.open("/characters");
+    if (root && root.isDirectory()) {
+      fs::File f = root.openNextFile();
+      while (f) {
+        if (f.isDirectory()) {
+          Serial.printf("  - Found Pet: %s\n", f.name());
+        }
+        f = root.openNextFile();
+      }
+    }
+  }
+  
   startBt();
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, HIGH); // off
@@ -1608,6 +1632,7 @@ void loop() {
   bool clocking = displayMode == DISP_NORMAL && !menuOpen && !settingsOpen &&
                   !resetOpen && !inPrompt && tama.sessionsRunning == 0 &&
                   tama.sessionsWaiting == 0 && dataRtcValid() && _onUsb;
+  bool inMenu = menuOpen || settingsOpen || resetOpen;
 
   // Button-press wake. Track which button woke the screen so its full
   // press cycle (including long-press) is swallowed — you don't want
@@ -1715,15 +1740,14 @@ void loop() {
       beep(2400, 30);
       petPage = (petPage + 1) % PET_PAGES;
       applyDisplayMode();
-    } else if (clocking ||
-               (displayMode == DISP_NORMAL && (now - lastInteractMs > 60000))) {
-      // If we are in clock mode (clocking is true), Button 2 cycles the
-      // rotation setting
+    } else if (displayMode == DISP_NORMAL && !inMenu && !inPrompt) {
+      // Button 2 cycles the rotation setting in normal mode
       Settings &s = settings();
       s.clockRot = (s.clockRot + 1) % 3;
       clockUpdateOrient();
       beep(2400, 30);
       settingsSave();
+      characterInvalidate(); // Force redraw for pet position
     } else {
       beep(2400, 30);
       msgScroll = (msgScroll >= 30) ? 0 : msgScroll + 1;
@@ -1744,8 +1768,7 @@ void loop() {
   static bool wasClocking = false;
   static bool wasLandscape = false;
   static bool wasPrompt = false;
-  bool inMenu = menuOpen || settingsOpen || resetOpen;
-  // inPrompt is already declared above
+  // inMenu and inPrompt moved up
 
   if (clocking != wasClocking || landscapeClock != wasLandscape ||
       (wasInMenu && !inMenu) || (wasDisplayMode != displayMode) ||
