@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Buddy Pro Pet Uploader</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&family=JetBrains+Mono&display=swap');
+
+        :root {
+            --primary: #00ff9d;
+            --bg: #0d0d0d;
+            --card: #1a1a1a;
+            --text: #ffffff;
+            --text-dim: #888888;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Outfit', sans-serif;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container { max-width: 900px; width: 100%; }
+        header { text-align: center; margin-bottom: 30px; }
+        h1 { font-weight: 600; color: var(--primary); margin-bottom: 5px; }
+        p { color: var(--text-dim); font-size: 14px; }
+
+        .card {
+            background: var(--card);
+            padding: 20px;
+            border-radius: 16px;
+            border: 1px solid #333;
+            margin-bottom: 20px;
+        }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .btn {
+            background: var(--primary);
+            color: black;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+            font-family: 'Outfit';
+        }
+
+        .btn:hover { transform: scale(1.05); filter: brightness(1.1); }
+        .btn:disabled { background: #333; color: #666; cursor: not-allowed; }
+
+        .section-title {
+            color: var(--primary);
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        .config-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .config-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .config-item label { font-size: 12px; color: var(--text-dim); }
+
+        input[type="text"], input[type="color"] {
+            background: #222;
+            border: 1px solid #444;
+            color: white;
+            padding: 8px;
+            border-radius: 6px;
+        }
+
+        /* Grid for states */
+        .states-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 15px;
+        }
+
+        .state-item {
+            background: #252525;
+            padding: 15px;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            border: 1px solid transparent;
+            transition: 0.2s;
+        }
+
+        .state-item:hover { border-color: var(--primary); }
+
+        .state-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .state-label { font-size: 14px; font-weight: 600; color: #fff; }
+        .state-desc { font-size: 11px; color: var(--text-dim); }
+
+        input[type="file"] { font-size: 11px; color: #aaa; }
+
+        .preview-area {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+            margin-top: 5px;
+        }
+
+        .preview-img {
+            width: 50px;
+            height: 50px;
+            background: #000;
+            border-radius: 4px;
+            object-fit: contain;
+            border: 1px solid #444;
+        }
+
+        .progress-container {
+            margin-top: 20px;
+            display: none;
+            background: #000;
+            padding: 20px;
+            border-radius: 12px;
+        }
+
+        .progress-bg {
+            background: #222;
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .progress-fill { background: var(--primary); height: 100%; width: 0%; transition: 0.1s; }
+
+        #log {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: #00ff00;
+            background: #000;
+            padding: 15px;
+            border-radius: 8px;
+            height: 120px;
+            overflow-y: auto;
+            margin-top: 15px;
+            border: 1px solid #333;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Claude Buddy Pro Uploader</h1>
+        <p>完整支援隨機閒置動畫與自定義配色</p>
+    </header>
+
+    <div class="card">
+        <div class="status-bar">
+            <div>狀態: <span id="conn-status" style="color: #ff4d4d;">未連接</span></div>
+            <button id="btn-connect" class="btn">連接設備</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="section-title">1. 基本資訊與配色</div>
+        <div class="config-row">
+            <div class="config-item">
+                <label>寵物名稱</label>
+                <input type="text" id="pet-name" value="bufo">
+            </div>
+            <div class="config-item">
+                <label>身體顏色</label>
+                <input type="color" id="color-body" value="#6B8E23">
+            </div>
+            <div class="config-item">
+                <label>背景顏色</label>
+                <input type="color" id="color-bg" value="#000000">
+            </div>
+            <div class="config-item">
+                <label>文字顏色</label>
+                <input type="color" id="color-text" value="#FFFFFF">
+            </div>
+            <div class="config-item">
+                <label>次要文字</label>
+                <input type="color" id="color-textDim" value="#808080">
+            </div>
+        </div>
+
+        <div class="section-title">2. 上傳 GIF 動畫</div>
+        <p style="margin-top: -10px; margin-bottom: 20px;">提示：閒置狀態可選取多個檔案，系統會自動處理隨機播放。</p>
+        
+        <div class="states-grid">
+            <!-- Idle (Multiple) -->
+            <div class="state-item" style="grid-column: 1 / -1;">
+                <div class="state-header">
+                    <span class="state-label">平時閒置 (Idle) *</span>
+                    <span class="state-desc">支援多選！選取的檔案會隨機切換</span>
+                </div>
+                <input type="file" id="file-idle" accept=".gif" multiple onchange="previewMulti(this, 'prev-idle')">
+                <div id="prev-idle" class="preview-area"></div>
+            </div>
+
+            <!-- Standard States -->
+            <div class="state-item">
+                <span class="state-label">睡覺 (Sleep)</span>
+                <input type="file" id="file-sleep" accept=".gif" onchange="previewMulti(this, 'prev-sleep')">
+                <div id="prev-sleep" class="preview-area"></div>
+            </div>
+            <div class="state-item">
+                <span class="state-label">工作中 (Busy)</span>
+                <input type="file" id="file-busy" accept=".gif" onchange="previewMulti(this, 'prev-busy')">
+                <div id="prev-busy" class="preview-area"></div>
+            </div>
+            <div class="state-item">
+                <span class="state-label">急躁 (Attention)</span>
+                <input type="file" id="file-attention" accept=".gif" onchange="previewMulti(this, 'prev-attention')">
+                <div id="prev-attention" class="preview-area"></div>
+            </div>
+            <div class="state-item">
+                <span class="state-label">慶祝 (Celebrate)</span>
+                <input type="file" id="file-celebrate" accept=".gif" onchange="previewMulti(this, 'prev-celebrate')">
+                <div id="prev-celebrate" class="preview-area"></div>
+            </div>
+            <div class="state-item">
+                <span class="state-label">暈頭轉向 (Dizzy)</span>
+                <input type="file" id="file-dizzy" accept=".gif" onchange="previewMulti(this, 'prev-dizzy')">
+                <div id="prev-dizzy" class="preview-area"></div>
+            </div>
+            <div class="state-item">
+                <span class="state-label">愛心 (Heart)</span>
+                <input type="file" id="file-heart" accept=".gif" onchange="previewMulti(this, 'prev-heart')">
+                <div id="prev-heart" class="preview-area"></div>
+            </div>
+        </div>
+
+        <div style="margin-top: 40px; text-align: center;">
+            <button id="btn-upload" class="btn" style="padding: 15px 40px; font-size: 18px;" disabled>一鍵安裝寵物</button>
+        </div>
+    </div>
+
+    <div class="progress-container" id="progress-container">
+        <div style="display: flex; justify-content: space-between;">
+            <span id="progress-text">準備中...</span>
+            <span id="progress-pct">0%</span>
+        </div>
+        <div class="progress-bg"><div class="progress-fill" id="progress-fill"></div></div>
+        <p id="progress-detail" style="font-size: 11px; color: var(--text-dim);"></p>
+        <div id="log"></div>
+    </div>
+</div>
+
+<script>
+    let port, reader, pendingResolver = null;
+
+    function log(msg) {
+        const div = document.createElement('div');
+        div.textContent = `> ${msg}`;
+        const logEl = document.getElementById('log');
+        logEl.appendChild(div);
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function previewMulti(input, areaId) {
+        const area = document.getElementById(areaId);
+        area.innerHTML = '';
+        for (let file of input.files) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = document.createElement('img');
+                img.src = e.target.result;
+                img.className = 'preview-img';
+                area.appendChild(img);
+            }
+            reader.readAsDataURL(file);
+        }
+    }
+
+    document.getElementById('btn-connect').onclick = async () => {
+        try {
+            port = await navigator.serial.requestPort();
+            await port.open({ baudRate: 115200 });
+            document.getElementById('conn-status').textContent = "已連接";
+            document.getElementById('conn-status').style.color = var(--primary);
+            document.getElementById('btn-upload').disabled = false;
+            log("設備已連接，準備上傳。");
+            readLoop();
+        } catch (e) { log("連接失敗: " + e); }
+    };
+
+    async function readLoop() {
+        while (port.readable) {
+            const textDecoder = new TextDecoderStream();
+            port.readable.pipeTo(textDecoder.writable);
+            reader = textDecoder.readable.getReader();
+            try {
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    const lines = value.split('\n');
+                    for (let line of lines) {
+                        if (!line.trim().startsWith('{')) continue;
+                        try {
+                            const json = JSON.parse(line);
+                            if (pendingResolver && json.ack) {
+                                pendingResolver(json);
+                                pendingResolver = null;
+                            }
+                        } catch(e) {}
+                    }
+                }
+            } finally { reader.releaseLock(); }
+        }
+    }
+
+    async function sendCommand(json) {
+        const encoder = new TextEncoder();
+        const writer = port.writable.getWriter();
+        await writer.write(encoder.encode(JSON.stringify(json) + '\n'));
+        writer.releaseLock();
+        return new Promise(resolve => {
+            pendingResolver = resolve;
+            setTimeout(() => resolve({ok: false, error: 'timeout'}), 8000);
+        });
+    }
+
+    document.getElementById('btn-upload').onclick = async () => {
+        const name = document.getElementById('pet-name').value.trim() || "bufo";
+        const idleInput = document.getElementById('file-idle');
+        if (idleInput.files.length === 0) return alert("請至少選取一個閒置動畫！");
+
+        document.getElementById('progress-container').style.display = 'block';
+        const filesToUpload = [];
+        const manifest = {
+            name: name,
+            mode: "gif",
+            colors: {
+                body: document.getElementById('color-body').value,
+                bg: document.getElementById('color-bg').value,
+                text: document.getElementById('color-text').value,
+                textDim: document.getElementById('color-textDim').value,
+                ink: "#000000"
+            },
+            states: {}
+        };
+
+        // Handle Idle (Array or Single)
+        if (idleInput.files.length > 1) {
+            manifest.states.idle = [];
+            for (let i = 0; i < idleInput.files.length; i++) {
+                const fname = `idle_${i}.gif`;
+                filesToUpload.push({ name: fname, file: idleInput.files[i] });
+                manifest.states.idle.push(fname);
+            }
+        } else {
+            filesToUpload.push({ name: "idle.gif", file: idleInput.files[0] });
+            manifest.states.idle = "idle.gif";
+        }
+
+        // Handle other states
+        const otherStates = ['sleep', 'busy', 'attention', 'celebrate', 'dizzy', 'heart'];
+        for (let s of otherStates) {
+            const input = document.getElementById(`file-${s}`);
+            if (input.files.length > 0) {
+                const fname = `${s}.gif`;
+                filesToUpload.push({ name: fname, file: input.files[0] });
+                manifest.states[s] = fname;
+            } else {
+                // Fallback to first idle
+                manifest.states[s] = (Array.isArray(manifest.states.idle)) ? manifest.states.idle[0] : manifest.states.idle;
+            }
+        }
+
+        filesToUpload.push({ name: 'manifest.json', file: new Blob([JSON.stringify(manifest, null, 2)], {type: 'application/json'}) });
+
+        let totalSize = 0;
+        for (let f of filesToUpload) totalSize += f.file.size;
+        
+        log(`開始安裝: ${name}, 總大小: ${Math.round(totalSize/1024)}KB`);
+        const begin = await sendCommand({ cmd: "char_begin", name: name, total: totalSize });
+        if (!begin.ok) return alert("初始化失敗: " + (begin.error || "空間不足"));
+
+        let uploaded = 0;
+        for (let f of filesToUpload) {
+            log(`傳送中: ${f.name}`);
+            const fileRes = await sendCommand({ cmd: "file", path: f.name, size: f.file.size });
+            if (!fileRes.ok) continue;
+
+            const bytes = new Uint8Array(await f.file.arrayBuffer());
+            const chunkSize = 200;
+            for (let i = 0; i < bytes.length; i += chunkSize) {
+                const chunk = bytes.slice(i, i + chunkSize);
+                const b64 = btoa(String.fromCharCode.apply(null, chunk));
+                await sendCommand({ cmd: "chunk", d: b64 });
+                uploaded += chunk.length;
+                const pct = Math.round((uploaded / totalSize) * 100);
+                document.getElementById('progress-fill').style.width = pct + '%';
+                document.getElementById('progress-pct').textContent = pct + '%';
+            }
+            await sendCommand({ cmd: "file_end" });
+        }
+
+        const end = await sendCommand({ cmd: "char_end" });
+        if (end.ok) log("✅ 安裝成功！寵物已切換。");
+        else log("❌ 結束失敗，請重試。");
+    };
+</script>
+</body>
+</html>
