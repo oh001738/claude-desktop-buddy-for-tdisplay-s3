@@ -214,25 +214,39 @@ static void applyDisplayMode() {
   characterInvalidate(); // redraws character on next tick (text mode path)
 }
 
-const char *menuItems[] = {"settings", "turn off", "help",
-                           "about",    "demo",     "close"};
+const char *menuItems[]   = {"settings", "turn off", "help",
+                             "about",    "demo",     "close"};
+const char *menuItemsZh[] = {"設定", "關機", "說明",
+                             "關於", "示範", "關閉"};
 const uint8_t MENU_N = 6;
 
 bool settingsOpen = false;
 uint8_t settingsSel = 0;
-const char *settingsItems[] = {
+const char *settingsItems[]   = {
     "brightness", "sound",     "bluetooth", "wifi",  "led",
-    "transcript", "clock rot", "ascii pet", "reset", "back"};
-const uint8_t SETTINGS_N = 10;
+    "transcript", "clock rot", "ascii pet", "reset", "language", "back"};
+const char *settingsItemsZh[] = {
+    "亮度", "音效", "藍牙",  "Wi-Fi", "LED",
+    "字幕", "方向", "角色",  "重置",  "語言", "返回"};
+const uint8_t SETTINGS_N = 11;
 static bool isSettingVisible(uint8_t i) {
   if (i == 1 || i == 3 || i == 4)
     return false; // Hide sound, wifi and led
+  if (i == 9 && !zhFontReady)
+    return false; // language option requires CJK font
   return true;
+}
+static uint8_t visibleSettingsCount() {
+  uint8_t n = 0;
+  for (uint8_t i = 0; i < SETTINGS_N; i++)
+    if (isSettingVisible(i)) n++;
+  return n;
 }
 
 bool resetOpen = false;
 uint8_t resetSel = 0;
-const char *resetItems[] = {"delete char", "factory reset", "back"};
+const char *resetItems[]   = {"delete char", "factory reset", "back"};
+const char *resetItemsZh[] = {"刪除角色", "恢復出廠", "返回"};
 const uint8_t RESET_N = 3;
 static uint32_t resetConfirmUntil = 0;
 static uint8_t resetConfirmIdx = 0xFF;
@@ -277,6 +291,12 @@ static void applySetting(uint8_t idx) {
     resetConfirmIdx = 0xFF;
     return;
   case 9:
+    if (zhFontReady) {
+      s.lang ^= 1;
+      settingsSave();
+    }
+    return;
+  case 10:
     settingsOpen = false;
     characterInvalidate();
     return;
@@ -364,6 +384,56 @@ static void drawMenuHints(const Palette &p, int mx, int mw, int hy,
   spr.fillTriangle(x, hy, x, hy + 6, x + 5, hy + 3, p.textDim);
 }
 
+// Returns true when CJK font is loaded AND user has selected Chinese.
+static inline bool zhLang() { return zhFontReady && settings().lang == 1; }
+
+// Returns zh string when Chinese mode is active, en string otherwise.
+static inline const char *loc(const char *en, const char *zh) {
+  return zhLang() ? zh : en;
+}
+
+// Render a menu label into dst at (x,y) using dst's current font.
+// In zh mode callers pass zhSpr (smooth font); in en mode pass spr/txtSpr.
+static void menuText(TFT_eSprite &dst, int x, int y, const char *label,
+                     uint16_t col, uint16_t bg) {
+  dst.setTextColor(col, bg);
+  dst.setCursor(x, y);
+  dst.print(label);
+}
+
+// Fast block copy: zhSpr (170×170) → spr at (mx, my).
+// memcpy per row is far faster than pushToSprite's pixel-by-pixel drawPixel.
+static void zhSprToSpr(int mx, int my) {
+  uint16_t *src = (uint16_t *)zhSpr.getPointer();
+  uint16_t *dst = (uint16_t *)spr.getPointer();
+  int copyW = min(170, W - mx);
+  int copyH = min(170, H - my);
+  for (int row = 0; row < copyH; row++)
+    memcpy(dst + (my + row) * W + mx, src + row * 170, copyW * 2);
+}
+
+// Helper: render settings value column into dst at (vx, vy).
+static void drawSettingsValue(TFT_eSprite &dst, int i, int vx, int vy,
+                              uint16_t dimCol, uint16_t bg) {
+  const Settings &s = settings();
+  static const char *const RN[] = {"0", "90", "270"};
+  dst.setTextColor(dimCol, bg);
+  dst.setCursor(vx, vy);
+  if (i == 0)
+    dst.printf("%u/4", brightLevel);
+  else if (i == 2 || i == 3 || i == 5) {
+    bool v = (i == 2) ? s.bt : (i == 3 ? s.wifi : s.hud);
+    dst.setTextColor(v ? GREEN : dimCol, bg);
+    dst.print(v ? "on" : "off");
+  } else if (i == 6)
+    dst.print(RN[s.clockRot]);
+  else if (i == 7) {
+    uint8_t total = buddySpeciesCount() + (gifAvailable ? 1 : 0);
+    dst.printf("%u/%u", buddyMode ? buddySpeciesIdx() + 1 : total, total);
+  } else if (i == 9)
+    dst.print(s.lang ? "ZH" : "EN");
+}
+
 static void drawSettings() {
   const Palette &p = characterPalette();
   if (clockOrient != 0) {
@@ -371,85 +441,80 @@ static void drawSettings() {
     renderLandscapePet(85, 85,
                        wasInMenu != (menuOpen || settingsOpen || resetOpen));
 
-    // Landscape Settings Side-Panel (150x170)
-    txtSpr.fillSprite(p.bg);
-    txtSpr.drawRect(0, 0, 150, 170, p.textDim);
-    txtSpr.setTextColor(p.text, p.bg);
-    txtSpr.setTextSize(1);
-    txtSpr.setCursor(10, 8);
-    txtSpr.print("SETTINGS");
-    txtSpr.drawFastHLine(5, 20, 140, p.textDim);
+    // Landscape: zh mode uses zhSpr, en mode uses txtSpr — both pushed at (170,0)
+    TFT_eSprite &panel = zhLang() ? zhSpr : txtSpr;
+    panel.fillSprite(p.bg);
+    panel.drawRect(0, 0, 150, 170, p.textDim);
+    panel.setTextColor(p.text, p.bg);
+    panel.setTextSize(1);
+    menuText(panel, 10, 8, loc("SETTINGS", "設定"), p.text, p.bg);
+    panel.drawFastHLine(5, 20, 140, p.textDim);
 
-    Settings &s = settings();
     int vLine = 0;
     for (int i = 0; i < SETTINGS_N; i++) {
-      if (!isSettingVisible(i))
-        continue;
+      if (!isSettingVisible(i)) continue;
       bool sel = (i == settingsSel);
       int y = 30 + vLine * 14;
-
-      txtSpr.setTextColor(sel ? p.text : p.textDim, p.bg);
-      if (sel)
-        txtSpr.fillRect(5, y - 2, 140, 13, 0x2104); // subtle highlight
-
-      txtSpr.setCursor(10, y);
-      txtSpr.print(sel ? "> " : "  ");
-      txtSpr.print(settingsItems[i]);
-
-      // Values on the right
-      txtSpr.setCursor(110, y);
-      if (i == 0)
-        txtSpr.printf("%u/4", brightLevel);
-      else if (i == 2 || i == 3 || i == 5) {
-        bool v = (i == 2) ? s.bt : (i == 3 ? s.wifi : s.hud);
-        txtSpr.setTextColor(v ? GREEN : p.textDim, p.bg);
-        txtSpr.print(v ? "on" : "off");
-      } else if (i == 6) {
-        static const char *const RN[] = {"0", "90", "270"};
-        txtSpr.print(RN[s.clockRot]);
-      } else if (i == 7) {
-        uint8_t total = buddySpeciesCount() + (gifAvailable ? 1 : 0);
-        txtSpr.printf("%u/%u", buddyMode ? buddySpeciesIdx() + 1 : total,
-                      total);
-      }
+      uint16_t itemCol = sel ? p.text : p.textDim;
+      if (sel) panel.fillRect(5, y - 2, 140, 13, 0x2104);
+      panel.setTextColor(itemCol, p.bg);
+      panel.setCursor(10, y);
+      panel.print(sel ? "> " : "  ");
+      menuText(panel, 10 + 12, y,
+               loc(settingsItems[i], settingsItemsZh[i]), itemCol, p.bg);
+      drawSettingsValue(panel, i, 110, y, p.textDim, p.bg);
       vLine++;
     }
-    txtSpr.pushSprite(170, 0);
+    zhSprOwner = ZH_NONE;
+    panel.pushSprite(170, 0);
     return;
   }
-  // --- Portrait Settings (Bottom) ---
-  int mw = 118, mh = 16 + SETTINGS_N * 14 + MENU_HINT_H;
+
+  // --- Portrait Settings ---
+  int mw = 118, mh = 16 + visibleSettingsCount() * 14 + MENU_HINT_H;
   int mx = (W - mw) / 2, my = H - mh - 10;
+
+  if (zhLang()) {
+    // zh: render full panel into zhSpr (relative coords), push to spr once.
+    zhSpr.fillSprite(p.bg);           // corners blend with spr background
+    zhSpr.fillRoundRect(0, 0, mw, mh, 4, PANEL);
+    zhSpr.drawRoundRect(0, 0, mw, mh, 4, p.textDim);
+    int vLine = 0;
+    for (int i = 0; i < SETTINGS_N; i++) {
+      if (!isSettingVisible(i)) continue;
+      bool sel = (i == settingsSel);
+      int ly = 8 + vLine * 14;
+      uint16_t itemCol = sel ? p.text : p.textDim;
+      zhSpr.setTextColor(itemCol, PANEL);
+      zhSpr.setCursor(6, ly);
+      zhSpr.print(sel ? "> " : "  ");
+      menuText(zhSpr, 6 + 12, ly,
+               settingsItemsZh[i], itemCol, PANEL);
+      drawSettingsValue(zhSpr, i, mw - 36, ly, p.textDim, PANEL);
+      vLine++;
+    }
+    zhSprOwner = ZH_NONE;
+    zhSprToSpr(mx, my);
+    spr.setTextSize(1);
+    drawMenuHints(p, mx, mw, my + mh - 12, "1:Next", "2:Change");
+    return;
+  }
+
+  // en: render directly into spr
   spr.fillRoundRect(mx, my, mw, mh, 4, PANEL);
   spr.drawRoundRect(mx, my, mw, mh, 4, p.textDim);
   spr.setTextSize(1);
-  Settings &s = settings();
-  bool vals[] = {s.sound, s.bt, s.wifi, s.led, s.hud};
   int vLine = 0;
   for (int i = 0; i < SETTINGS_N; i++) {
-    if (!isSettingVisible(i))
-      continue;
+    if (!isSettingVisible(i)) continue;
     bool sel = (i == settingsSel);
-    spr.setTextColor(sel ? p.text : p.textDim, PANEL);
-    spr.setCursor(mx + 6, my + 8 + vLine * 14);
+    int ly = my + 8 + vLine * 14;
+    uint16_t itemCol = sel ? p.text : p.textDim;
+    spr.setTextColor(itemCol, PANEL);
+    spr.setCursor(mx + 6, ly);
     spr.print(sel ? "> " : "  ");
     spr.print(settingsItems[i]);
-    spr.setCursor(mx + mw - 36, my + 8 + vLine * 14);
-    spr.setTextColor(p.textDim, PANEL);
-    if (i == 0)
-      spr.printf("%u/4", brightLevel);
-    else if (i == 2 || i == 3 || i == 5) {
-      bool v = (i == 2) ? s.bt : (i == 3 ? s.wifi : s.hud);
-      spr.setTextColor(v ? GREEN : p.textDim, PANEL);
-      spr.print(v ? " on" : "off");
-    } else if (i == 6) {
-      static const char *const RN[] = {"0", "90", "270"};
-      spr.print(RN[s.clockRot]);
-    } else if (i == 7) {
-      uint8_t total = buddySpeciesCount() + (gifAvailable ? 1 : 0);
-      uint8_t pos = buddyMode ? buddySpeciesIdx() + 1 : total;
-      spr.printf("%u/%u", pos, total);
-    }
+    drawSettingsValue(spr, i, mx + mw - 36, ly, p.textDim, PANEL);
     vLine++;
   }
   drawMenuHints(p, mx, mw, my + mh - 12, "1:Next", "2:Change");
@@ -462,36 +527,63 @@ static void drawReset() {
     renderLandscapePet(85, 85,
                        wasInMenu != (menuOpen || settingsOpen || resetOpen));
 
-    txtSpr.fillSprite(p.bg);
+    TFT_eSprite &panel = zhLang() ? zhSpr : txtSpr;
+    panel.fillSprite(p.bg);
     int mx = 5, my = 60;
     for (int i = 0; i < RESET_N; i++) {
       bool sel = (i == resetSel);
-      txtSpr.setTextColor(sel ? p.text : p.textDim, p.bg);
-      txtSpr.setCursor(mx, my + i * 14);
-      txtSpr.print(sel ? "> " : "  ");
       bool armed =
           (i == resetConfirmIdx) && (int32_t)(millis() - resetConfirmUntil) < 0;
-      if (armed)
-        txtSpr.setTextColor(HOT, p.bg);
-      txtSpr.print(armed ? "really?" : resetItems[i]);
+      uint16_t itemCol = armed ? HOT : (sel ? p.text : p.textDim);
+      panel.setTextColor(itemCol, p.bg);
+      panel.setCursor(mx, my + i * 14);
+      panel.print(sel ? "> " : "  ");
+      const char *label = armed ? loc("really?", "確定？")
+                                : loc(resetItems[i], resetItemsZh[i]);
+      menuText(panel, mx + 12, my + i * 14, label, itemCol, p.bg);
     }
-    txtSpr.pushSprite(170, 0);
+    zhSprOwner = ZH_NONE;
+    panel.pushSprite(170, 0);
     return;
   }
+
   int mw = 118, mh = 16 + RESET_N * 14 + MENU_HINT_H;
-  int mx = (W - mw) / 2, my = H - mh - 10; // Move to bottom
+  int mx = (W - mw) / 2, my = H - mh - 10;
+
+  if (zhLang()) {
+    zhSpr.fillSprite(p.bg);
+    zhSpr.fillRoundRect(0, 0, mw, mh, 4, PANEL);
+    zhSpr.drawRoundRect(0, 0, mw, mh, 4, HOT);
+    for (int i = 0; i < RESET_N; i++) {
+      bool sel = (i == resetSel);
+      bool armed =
+          (i == resetConfirmIdx) && (int32_t)(millis() - resetConfirmUntil) < 0;
+      uint16_t itemCol = armed ? HOT : (sel ? p.text : p.textDim);
+      zhSpr.setTextColor(itemCol, PANEL);
+      zhSpr.setCursor(6, 8 + i * 14);
+      zhSpr.print(sel ? "> " : "  ");
+      const char *label = armed ? loc("really?", "確定？")
+                                : resetItemsZh[i];
+      menuText(zhSpr, 6 + 12, 8 + i * 14, label, itemCol, PANEL);
+    }
+    zhSprOwner = ZH_NONE;
+    zhSprToSpr(mx, my);
+    spr.setTextSize(1);
+    drawMenuHints(p, mx, mw, my + mh - 12);
+    return;
+  }
+
   spr.fillRoundRect(mx, my, mw, mh, 4, PANEL);
   spr.drawRoundRect(mx, my, mw, mh, 4, HOT);
   spr.setTextSize(1);
   for (int i = 0; i < RESET_N; i++) {
     bool sel = (i == resetSel);
-    spr.setTextColor(sel ? p.text : p.textDim, PANEL);
-    spr.setCursor(mx + 6, my + 8 + i * 14);
-    spr.print(sel ? "> " : "  ");
     bool armed =
         (i == resetConfirmIdx) && (int32_t)(millis() - resetConfirmUntil) < 0;
-    if (armed)
-      spr.setTextColor(HOT, PANEL);
+    uint16_t itemCol = armed ? HOT : (sel ? p.text : p.textDim);
+    spr.setTextColor(itemCol, PANEL);
+    spr.setCursor(mx + 6, my + 8 + i * 14);
+    spr.print(sel ? "> " : "  ");
     spr.print(armed ? "really?" : resetItems[i]);
   }
   drawMenuHints(p, mx, mw, my + mh - 12);
@@ -555,33 +647,68 @@ void drawMenu() {
     renderLandscapePet(85, 85,
                        wasInMenu != (menuOpen || settingsOpen || resetOpen));
 
-    txtSpr.fillSprite(p.bg);
+    TFT_eSprite &panel = zhLang() ? zhSpr : txtSpr;
+    panel.fillSprite(p.bg);
     int mx = 5, my = 40;
     for (int i = 0; i < MENU_N; i++) {
       bool sel = (i == menuSel);
-      txtSpr.setTextColor(sel ? p.text : p.textDim, p.bg);
-      txtSpr.setCursor(mx, my + i * 14);
-      txtSpr.print(sel ? "> " : "  ");
-      txtSpr.print(menuItems[i]);
-      if (i == 4)
-        txtSpr.print(dataDemo() ? " on" : " off");
+      uint16_t itemCol = sel ? p.text : p.textDim;
+      panel.setTextColor(itemCol, p.bg);
+      panel.setCursor(mx, my + i * 14);
+      panel.print(sel ? "> " : "  ");
+      menuText(panel, mx + 12, my + i * 14,
+               loc(menuItems[i], menuItemsZh[i]), itemCol, p.bg);
+      if (i == 4) {
+        panel.setTextColor(p.textDim, p.bg);
+        panel.print(dataDemo() ? " on" : " off");
+      }
     }
-    txtSpr.pushSprite(170, 0);
+    zhSprOwner = ZH_NONE;
+    panel.pushSprite(170, 0);
     return;
   }
+
   int mw = 118, mh = 16 + MENU_N * 14 + MENU_HINT_H;
-  int mx = (W - mw) / 2, my = H - mh - 10; // Move to bottom
+  int mx = (W - mw) / 2, my = H - mh - 10;
+
+  if (zhLang()) {
+    zhSpr.fillSprite(p.bg);
+    zhSpr.fillRoundRect(0, 0, mw, mh, 4, PANEL);
+    zhSpr.drawRoundRect(0, 0, mw, mh, 4, p.textDim);
+    for (int i = 0; i < MENU_N; i++) {
+      bool sel = (i == menuSel);
+      uint16_t itemCol = sel ? p.text : p.textDim;
+      zhSpr.setTextColor(itemCol, PANEL);
+      zhSpr.setCursor(6, 8 + i * 14);
+      zhSpr.print(sel ? "> " : "  ");
+      menuText(zhSpr, 6 + 12, 8 + i * 14,
+               menuItemsZh[i], itemCol, PANEL);
+      if (i == 4) {
+        zhSpr.setTextColor(p.textDim, PANEL);
+        zhSpr.print(dataDemo() ? " on" : " off");
+      }
+    }
+    zhSprOwner = ZH_NONE;
+    zhSprToSpr(mx, my);
+    spr.setTextSize(1);
+    drawMenuHints(p, mx, mw, my + mh - 12);
+    return;
+  }
+
   spr.fillRoundRect(mx, my, mw, mh, 4, PANEL);
   spr.drawRoundRect(mx, my, mw, mh, 4, p.textDim);
   spr.setTextSize(1);
   for (int i = 0; i < MENU_N; i++) {
     bool sel = (i == menuSel);
-    spr.setTextColor(sel ? p.text : p.textDim, PANEL);
+    uint16_t itemCol = sel ? p.text : p.textDim;
+    spr.setTextColor(itemCol, PANEL);
     spr.setCursor(mx + 6, my + 8 + i * 14);
     spr.print(sel ? "> " : "  ");
     spr.print(menuItems[i]);
-    if (i == 4)
+    if (i == 4) {
+      spr.setTextColor(p.textDim, PANEL);
       spr.print(dataDemo() ? "  on" : "  off");
+    }
   }
   drawMenuHints(p, mx, mw, my + mh - 12);
 }
