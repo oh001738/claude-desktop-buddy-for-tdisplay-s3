@@ -84,6 +84,8 @@ unsigned long t = 0;
 // Menu
 bool menuOpen = false;
 uint8_t menuSel = 0;
+static bool menuDirty = true;
+static inline void menuInvalidate() { menuDirty = true; }
 uint8_t brightLevel = 4; // 0..4 → ScreenBreath 20..100
 bool btnALong = false;
 
@@ -443,29 +445,32 @@ static void drawSettings() {
 
     // Landscape: zh mode uses zhSpr, en mode uses txtSpr — both pushed at (170,0)
     TFT_eSprite &panel = zhLang() ? zhSpr : txtSpr;
-    panel.fillSprite(p.bg);
-    panel.drawRect(0, 0, 150, 170, p.textDim);
-    panel.setTextColor(p.text, p.bg);
-    panel.setTextSize(1);
-    menuText(panel, 10, 8, loc("SETTINGS", "設定"), p.text, p.bg);
-    panel.drawFastHLine(5, 20, 140, p.textDim);
+    if (!zhLang() || menuDirty) {
+      panel.fillSprite(p.bg);
+      panel.drawRect(0, 0, 150, 170, p.textDim);
+      panel.setTextColor(p.text, p.bg);
+      panel.setTextSize(1);
+      menuText(panel, 10, 8, loc("SETTINGS", "設定"), p.text, p.bg);
+      panel.drawFastHLine(5, 20, 140, p.textDim);
 
-    int vLine = 0;
-    for (int i = 0; i < SETTINGS_N; i++) {
-      if (!isSettingVisible(i)) continue;
-      bool sel = (i == settingsSel);
-      int y = 30 + vLine * 14;
-      uint16_t itemCol = sel ? p.text : p.textDim;
-      if (sel) panel.fillRect(5, y - 2, 140, 13, 0x2104);
-      panel.setTextColor(itemCol, p.bg);
-      panel.setCursor(10, y);
-      panel.print(sel ? "> " : "  ");
-      menuText(panel, 10 + 12, y,
-               loc(settingsItems[i], settingsItemsZh[i]), itemCol, p.bg);
-      drawSettingsValue(panel, i, 110, y, p.textDim, p.bg);
-      vLine++;
+      int vLine = 0;
+      for (int i = 0; i < SETTINGS_N; i++) {
+        if (!isSettingVisible(i)) continue;
+        bool sel = (i == settingsSel);
+        int y = 30 + vLine * 14;
+        uint16_t itemCol = sel ? p.text : p.textDim;
+        if (sel) panel.fillRect(5, y - 2, 140, 13, 0x2104);
+        panel.setTextColor(itemCol, p.bg);
+        panel.setCursor(10, y);
+        panel.print(sel ? "> " : "  ");
+        menuText(panel, 10 + 12, y,
+                 loc(settingsItems[i], settingsItemsZh[i]), itemCol, p.bg);
+        drawSettingsValue(panel, i, 110, y, p.textDim, p.bg);
+        vLine++;
+      }
+      zhSprOwner = ZH_NONE;
+      if (zhLang()) menuDirty = false;
     }
-    zhSprOwner = ZH_NONE;
     panel.pushSprite(170, 0);
     return;
   }
@@ -475,25 +480,28 @@ static void drawSettings() {
   int mx = (W - mw) / 2, my = H - mh - 10;
 
   if (zhLang()) {
-    // zh: render full panel into zhSpr (relative coords), push to spr once.
-    zhSpr.fillSprite(p.bg);           // corners blend with spr background
-    zhSpr.fillRoundRect(0, 0, mw, mh, 4, PANEL);
-    zhSpr.drawRoundRect(0, 0, mw, mh, 4, p.textDim);
-    int vLine = 0;
-    for (int i = 0; i < SETTINGS_N; i++) {
-      if (!isSettingVisible(i)) continue;
-      bool sel = (i == settingsSel);
-      int ly = 8 + vLine * 14;
-      uint16_t itemCol = sel ? p.text : p.textDim;
-      zhSpr.setTextColor(itemCol, PANEL);
-      zhSpr.setCursor(6, ly);
-      zhSpr.print(sel ? "> " : "  ");
-      menuText(zhSpr, 6 + 12, ly,
-               settingsItemsZh[i], itemCol, PANEL);
-      drawSettingsValue(zhSpr, i, mw - 36, ly, p.textDim, PANEL);
-      vLine++;
+    if (menuDirty) {
+      // zh: render full panel into zhSpr (relative coords), push to spr once.
+      zhSpr.fillSprite(p.bg);           // corners blend with spr background
+      zhSpr.fillRoundRect(0, 0, mw, mh, 4, PANEL);
+      zhSpr.drawRoundRect(0, 0, mw, mh, 4, p.textDim);
+      int vLine = 0;
+      for (int i = 0; i < SETTINGS_N; i++) {
+        if (!isSettingVisible(i)) continue;
+        bool sel = (i == settingsSel);
+        int ly = 8 + vLine * 14;
+        uint16_t itemCol = sel ? p.text : p.textDim;
+        zhSpr.setTextColor(itemCol, PANEL);
+        zhSpr.setCursor(6, ly);
+        zhSpr.print(sel ? "> " : "  ");
+        menuText(zhSpr, 6 + 12, ly,
+                 settingsItemsZh[i], itemCol, PANEL);
+        drawSettingsValue(zhSpr, i, mw - 36, ly, p.textDim, PANEL);
+        vLine++;
+      }
+      zhSprOwner = ZH_NONE;
+      menuDirty = false;
     }
-    zhSprOwner = ZH_NONE;
     zhSprToSpr(mx, my);
     spr.setTextSize(1);
     drawMenuHints(p, mx, mw, my + mh - 12, "1:Next", "2:Change");
@@ -528,21 +536,24 @@ static void drawReset() {
                        wasInMenu != (menuOpen || settingsOpen || resetOpen));
 
     TFT_eSprite &panel = zhLang() ? zhSpr : txtSpr;
-    panel.fillSprite(p.bg);
-    int mx = 5, my = 60;
-    for (int i = 0; i < RESET_N; i++) {
-      bool sel = (i == resetSel);
-      bool armed =
-          (i == resetConfirmIdx) && (int32_t)(millis() - resetConfirmUntil) < 0;
-      uint16_t itemCol = armed ? HOT : (sel ? p.text : p.textDim);
-      panel.setTextColor(itemCol, p.bg);
-      panel.setCursor(mx, my + i * 14);
-      panel.print(sel ? "> " : "  ");
-      const char *label = armed ? loc("really?", "確定？")
-                                : loc(resetItems[i], resetItemsZh[i]);
-      menuText(panel, mx + 12, my + i * 14, label, itemCol, p.bg);
+    bool anyArmed = (resetConfirmIdx != 0xFF) && (int32_t)(millis() - resetConfirmUntil) < 0;
+    if (!zhLang() || menuDirty || anyArmed) {
+      panel.fillSprite(p.bg);
+      int mx = 5, my = 60;
+      for (int i = 0; i < RESET_N; i++) {
+        bool sel = (i == resetSel);
+        bool armed = (i == resetConfirmIdx) && anyArmed;
+        uint16_t itemCol = armed ? HOT : (sel ? p.text : p.textDim);
+        panel.setTextColor(itemCol, p.bg);
+        panel.setCursor(mx, my + i * 14);
+        panel.print(sel ? "> " : "  ");
+        const char *label = armed ? loc("really?", "確定？")
+                                  : loc(resetItems[i], resetItemsZh[i]);
+        menuText(panel, mx + 12, my + i * 14, label, itemCol, p.bg);
+      }
+      zhSprOwner = ZH_NONE;
+      if (zhLang() && !anyArmed) menuDirty = false;
     }
-    zhSprOwner = ZH_NONE;
     panel.pushSprite(170, 0);
     return;
   }
@@ -551,22 +562,25 @@ static void drawReset() {
   int mx = (W - mw) / 2, my = H - mh - 10;
 
   if (zhLang()) {
-    zhSpr.fillSprite(p.bg);
-    zhSpr.fillRoundRect(0, 0, mw, mh, 4, PANEL);
-    zhSpr.drawRoundRect(0, 0, mw, mh, 4, HOT);
-    for (int i = 0; i < RESET_N; i++) {
-      bool sel = (i == resetSel);
-      bool armed =
-          (i == resetConfirmIdx) && (int32_t)(millis() - resetConfirmUntil) < 0;
-      uint16_t itemCol = armed ? HOT : (sel ? p.text : p.textDim);
-      zhSpr.setTextColor(itemCol, PANEL);
-      zhSpr.setCursor(6, 8 + i * 14);
-      zhSpr.print(sel ? "> " : "  ");
-      const char *label = armed ? loc("really?", "確定？")
-                                : resetItemsZh[i];
-      menuText(zhSpr, 6 + 12, 8 + i * 14, label, itemCol, PANEL);
+    bool anyArmed = (resetConfirmIdx != 0xFF) && (int32_t)(millis() - resetConfirmUntil) < 0;
+    if (menuDirty || anyArmed) {
+      zhSpr.fillSprite(p.bg);
+      zhSpr.fillRoundRect(0, 0, mw, mh, 4, PANEL);
+      zhSpr.drawRoundRect(0, 0, mw, mh, 4, HOT);
+      for (int i = 0; i < RESET_N; i++) {
+        bool sel = (i == resetSel);
+        bool armed = (i == resetConfirmIdx) && anyArmed;
+        uint16_t itemCol = armed ? HOT : (sel ? p.text : p.textDim);
+        zhSpr.setTextColor(itemCol, PANEL);
+        zhSpr.setCursor(6, 8 + i * 14);
+        zhSpr.print(sel ? "> " : "  ");
+        const char *label = armed ? loc("really?", "確定？")
+                                  : resetItemsZh[i];
+        menuText(zhSpr, 6 + 12, 8 + i * 14, label, itemCol, PANEL);
+      }
+      zhSprOwner = ZH_NONE;
+      if (!anyArmed) menuDirty = false;
     }
-    zhSprOwner = ZH_NONE;
     zhSprToSpr(mx, my);
     spr.setTextSize(1);
     drawMenuHints(p, mx, mw, my + mh - 12);
@@ -648,22 +662,25 @@ void drawMenu() {
                        wasInMenu != (menuOpen || settingsOpen || resetOpen));
 
     TFT_eSprite &panel = zhLang() ? zhSpr : txtSpr;
-    panel.fillSprite(p.bg);
-    int mx = 5, my = 40;
-    for (int i = 0; i < MENU_N; i++) {
-      bool sel = (i == menuSel);
-      uint16_t itemCol = sel ? p.text : p.textDim;
-      panel.setTextColor(itemCol, p.bg);
-      panel.setCursor(mx, my + i * 14);
-      panel.print(sel ? "> " : "  ");
-      menuText(panel, mx + 12, my + i * 14,
-               loc(menuItems[i], menuItemsZh[i]), itemCol, p.bg);
-      if (i == 4) {
-        panel.setTextColor(p.textDim, p.bg);
-        panel.print(dataDemo() ? " on" : " off");
+    if (!zhLang() || menuDirty) {
+      panel.fillSprite(p.bg);
+      int mx = 5, my = 40;
+      for (int i = 0; i < MENU_N; i++) {
+        bool sel = (i == menuSel);
+        uint16_t itemCol = sel ? p.text : p.textDim;
+        panel.setTextColor(itemCol, p.bg);
+        panel.setCursor(mx, my + i * 14);
+        panel.print(sel ? "> " : "  ");
+        menuText(panel, mx + 12, my + i * 14,
+                 loc(menuItems[i], menuItemsZh[i]), itemCol, p.bg);
+        if (i == 4) {
+          panel.setTextColor(p.textDim, p.bg);
+          panel.print(dataDemo() ? " on" : " off");
+        }
       }
+      zhSprOwner = ZH_NONE;
+      if (zhLang()) menuDirty = false;
     }
-    zhSprOwner = ZH_NONE;
     panel.pushSprite(170, 0);
     return;
   }
@@ -672,23 +689,26 @@ void drawMenu() {
   int mx = (W - mw) / 2, my = H - mh - 10;
 
   if (zhLang()) {
-    zhSpr.fillSprite(p.bg);
-    zhSpr.fillRoundRect(0, 0, mw, mh, 4, PANEL);
-    zhSpr.drawRoundRect(0, 0, mw, mh, 4, p.textDim);
-    for (int i = 0; i < MENU_N; i++) {
-      bool sel = (i == menuSel);
-      uint16_t itemCol = sel ? p.text : p.textDim;
-      zhSpr.setTextColor(itemCol, PANEL);
-      zhSpr.setCursor(6, 8 + i * 14);
-      zhSpr.print(sel ? "> " : "  ");
-      menuText(zhSpr, 6 + 12, 8 + i * 14,
-               menuItemsZh[i], itemCol, PANEL);
-      if (i == 4) {
-        zhSpr.setTextColor(p.textDim, PANEL);
-        zhSpr.print(dataDemo() ? " on" : " off");
+    if (menuDirty) {
+      zhSpr.fillSprite(p.bg);
+      zhSpr.fillRoundRect(0, 0, mw, mh, 4, PANEL);
+      zhSpr.drawRoundRect(0, 0, mw, mh, 4, p.textDim);
+      for (int i = 0; i < MENU_N; i++) {
+        bool sel = (i == menuSel);
+        uint16_t itemCol = sel ? p.text : p.textDim;
+        zhSpr.setTextColor(itemCol, PANEL);
+        zhSpr.setCursor(6, 8 + i * 14);
+        zhSpr.print(sel ? "> " : "  ");
+        menuText(zhSpr, 6 + 12, 8 + i * 14,
+                 menuItemsZh[i], itemCol, PANEL);
+        if (i == 4) {
+          zhSpr.setTextColor(p.textDim, PANEL);
+          zhSpr.print(dataDemo() ? " on" : " off");
+        }
       }
+      zhSprOwner = ZH_NONE;
+      menuDirty = false;
     }
-    zhSprOwner = ZH_NONE;
     zhSprToSpr(mx, my);
     spr.setTextSize(1);
     drawMenuHints(p, mx, mw, my + mh - 12);
@@ -2052,12 +2072,15 @@ void loop() {
       beep(800, 60);
       if (resetOpen) {
         resetOpen = false;
+        menuInvalidate();
       } else if (settingsOpen) {
         settingsOpen = false;
+        menuInvalidate();
         characterInvalidate();
       } else {
         menuOpen = !menuOpen;
         menuSel = 0;
+        menuInvalidate();
         if (!menuOpen)
           characterInvalidate();
       }
@@ -2084,14 +2107,17 @@ void loop() {
         beep(1800, 30);
         resetSel = (resetSel + 1) % RESET_N;
         resetConfirmIdx = 0xFF;
+        menuInvalidate();
       } else if (settingsOpen) {
         beep(1800, 30);
         do {
           settingsSel = (settingsSel + 1) % SETTINGS_N;
         } while (!isSettingVisible(settingsSel));
+        menuInvalidate();
       } else if (menuOpen) {
         beep(1800, 30);
         menuSel = (menuSel + 1) % MENU_N;
+        menuInvalidate();
       } else {
         beep(1800, 30);
         displayMode = (displayMode + 1) % DISP_COUNT;
@@ -2121,12 +2147,15 @@ void loop() {
     } else if (resetOpen) {
       beep(2400, 30);
       applyReset(resetSel);
+      menuInvalidate();
     } else if (settingsOpen) {
       beep(2400, 30);
       applySetting(settingsSel);
+      menuInvalidate();
     } else if (menuOpen) {
       beep(2400, 30);
       menuConfirm();
+      menuInvalidate();
     } else if (displayMode == DISP_INFO) {
       beep(2400, 30);
       infoPage = (infoPage + 1) % INFO_PAGES;
