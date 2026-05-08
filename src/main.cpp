@@ -8,6 +8,29 @@
 TFT_eSprite spr = TFT_eSprite(hal_get_lcd());
 TFT_eSprite petSpr = TFT_eSprite(hal_get_lcd());
 TFT_eSprite txtSpr = TFT_eSprite(hal_get_lcd());
+// Dedicated sprite for CJK transcript rendering (smooth font enabled).
+// Created and font-loaded only if /ZhTW12.vlw exists in LittleFS.
+TFT_eSprite zhSpr = TFT_eSprite(hal_get_lcd());
+static bool zhFontReady = false;
+
+// Transcript-active hold: when a new transcript line arrives, we keep the
+// transcript visible (covering the portrait clock area) for this many ms
+// after the latest update. After expiry, drawClock reverts to time/date.
+static const uint32_t TRANSCRIPT_HOLD_MS = 30000;
+static uint32_t transcriptActiveUntilMs = 0;
+static uint32_t lastSeenLineGen = 0;
+
+// zhSpr is shared across three render paths (drawHUD-portrait, drawClock-
+// portrait-transcript, drawClock-landscape-transcript). Tracking the last
+// writer lets the heavy portrait-clock-transcript path skip re-rendering
+// when nothing changed and the previous content is still valid.
+enum ZhSprOwner : uint8_t {
+  ZH_NONE = 0,
+  ZH_HUD_PORTRAIT,
+  ZH_CLOCK_PORTRAIT,
+  ZH_CLOCK_LANDSCAPE,
+};
+static ZhSprOwner zhSprOwner = ZH_NONE;
 
 // Advertise as "Claude-XXXX" (last two BT MAC bytes) so multiple sticks
 // in one room are distinguishable in the desktop picker. Name persists in
@@ -171,6 +194,8 @@ const uint8_t INFO_PG_BUTTONS = 1;
 const uint8_t INFO_PG_CREDITS = 5;
 void drawPet();
 void drawHUD();
+static uint8_t wrapInto(const char *in, char out[][32], uint8_t maxRows,
+                        uint8_t width);
 static void clockUpdateOrient();
 static void renderLandscapePet(int cx, int cy, bool force = false);
 
@@ -624,8 +649,69 @@ static void drawClock() {
 
   if (clockOrient == 0) {
     paintedOrient = 0;
-    // T-Display S3 Portrait Layout: Pet at top, clock centered in lower half
+    // T-Display S3 Portrait Layout: Pet at top, clock centered in lower half.
+    // The fillRect below also wipes any leftover transcript pixels when this
+    // mode reverts to clock — guarantees no overlap on transition.
     spr.fillRect(0, 150, W, H - 150, p.bg);
+
+    // Transcript-active mode: when transcript was updated within HOLD_MS,
+    // show transcript covering the clock area (pet stays at top).
+    bool transcriptActive = zhFontReady && tama.nLines > 0 &&
+        (int32_t)(transcriptActiveUntilMs - millis()) > 0;
+    if (transcriptActive) {
+      const int LH = 15;
+      const int WIDTH = 22;
+      const int SHOW = 10;
+
+      // Smooth-font rendering of ~220 CJK glyphs costs ~50ms/frame; doing it
+      // every loop iteration starves the button-poll loop. Cache the rendered
+      // zhSpr and only re-draw when content changed OR another render path
+      // last wrote to zhSpr (which would have left the wrong content there).
+      // Also throttle re-renders to at most every 300ms, so streaming responses
+      // (which can bump lineGen several times per second) don't peg the loop.
+      static uint32_t cachedLineGen = 0xFFFFFFFF;
+      static uint32_t lastRenderMs = 0;
+      bool ownerChanged = (zhSprOwner != ZH_CLOCK_PORTRAIT);
+      bool contentChanged = (cachedLineGen != tama.lineGen);
+      uint32_t nowMs = millis();
+      bool needRender = ownerChanged ||
+          (contentChanged && (nowMs - lastRenderMs >= 300));
+
+      if (needRender) {
+        static char tdisp[32][32];
+        static uint8_t tsrcOf[32];
+        uint8_t nDisp = 0;
+        for (uint8_t i = 0; i < tama.nLines && nDisp < 32; i++) {
+          uint8_t got = wrapInto(tama.lines[i], &tdisp[nDisp], 32 - nDisp, WIDTH);
+          for (uint8_t j = 0; j < got; j++)
+            tsrcOf[nDisp + j] = i;
+          nDisp += got;
+        }
+        int end = (int)nDisp;
+        int start = end - SHOW;
+        if (start < 0)
+          start = 0;
+        uint8_t newest = tama.nLines - 1;
+
+        zhSpr.fillSprite(p.bg);
+        for (int i = 0; start + i < end; i++) {
+          uint8_t row = start + i;
+          bool fresh = (tsrcOf[row] == newest);
+          zhSpr.setTextColor(fresh ? p.text : p.textDim, p.bg);
+          zhSpr.setCursor(4, 2 + i * LH);
+          zhSpr.print(tdisp[row]);
+        }
+        cachedLineGen = tama.lineGen;
+        lastRenderMs = nowMs;
+        zhSprOwner = ZH_CLOCK_PORTRAIT;
+      }
+      // Push at y=160; sprite is 170 tall, so it covers y=160..320 (10px gap
+      // above is intentional for visual separation from pet bottom edge).
+      zhSpr.pushToSprite(&spr, 0, 160);
+      return;
+    }
+
+    // Default clock-and-date view
     spr.setTextDatum(MC_DATUM);
     spr.setTextSize(5);
     spr.setTextColor(p.text, p.bg);
@@ -671,28 +757,75 @@ static void drawClock() {
     hal_get_lcd()->setTextSize(1);
   }
 
-  // Draw status message or transcript
-  if (tama.nLines > 0) {
-    // Re-use txtSpr for the transcript block (145x35 approx)
-    txtSpr.fillSprite(p.bg);
-    txtSpr.setTextSize(1);
-    txtSpr.setTextDatum(TL_DATUM);
-    uint32_t now = millis();
-    for (uint8_t i = 0; i < tama.nLines && i < 3; i++) {
-      txtSpr.setTextColor(i == 0 ? p.text : p.textDim, p.bg);
-      int tw = txtSpr.textWidth(tama.lines[i]);
-      int x = 0;
-      if (tw > 145) {
-        int range = tw - 145;
-        int offset = (now / 40) % (range * 2);
-        if (offset > range)
-          offset = range * 2 - offset;
-        x -= offset;
+  // Draw status message or transcript.
+  // Transcript shown only while activity is recent (TRANSCRIPT_HOLD_MS); after
+  // expiry, fall through to else-branch which clears the area and shows tama.msg.
+  bool transcriptActive = tama.nLines > 0 &&
+      (int32_t)(transcriptActiveUntilMs - millis()) > 0;
+  static bool transcriptWasActive = false;
+  if (transcriptActive) {
+    // CJK path: draw through zhSpr (smooth font); ASCII path: stay on txtSpr.
+    if (zhFontReady) {
+      uint32_t now = millis();
+      // Per-line viewport clipping prevents line 0's marquee glyphs from
+      // bleeding into line 1's row when the offset takes them far off-canvas
+      // (smooth-font bbox extends ~descender pixels into next line; without
+      // the per-line viewport, that's visible as line 0 tails at line 1 y).
+      zhSpr.fillSprite(p.bg);
+      for (uint8_t i = 0; i < tama.nLines && i < 2; i++) {
+        zhSpr.setViewport(0, i * 15, 170, 15);
+        zhSpr.setTextColor(i == 0 ? p.text : p.textDim, p.bg);
+        int tw = zhSpr.textWidth(tama.lines[i]);
+        int x = 0;
+        if (tw > 145) {
+          int range = tw - 145;
+          int offset = (now / 40) % (range * 2);
+          if (offset > range)
+            offset = range * 2 - offset;
+          x -= offset;
+        }
+        // Within viewport, y is row-relative (top of viewport).
+        zhSpr.drawString(tama.lines[i], x, 0);
       }
-      txtSpr.drawString(tama.lines[i], x, i * 11);
+      zhSpr.resetViewport();
+      zhSprOwner = ZH_CLOCK_LANDSCAPE;
+      // Push only the 145×30 sub-region that's actually visible on the LCD
+      // (x=175..320, y=140..170). Strictly excludes the buffer used by other
+      // zhSpr render paths AND avoids any ST7789 RAM wraparound from address
+      // windows extending past the visible 320×170 panel edge.
+      zhSpr.pushSprite(175, 140, 0, 0, 145, 30);
+      transcriptWasActive = true;
+    } else {
+      // Re-use txtSpr for the transcript block (145x35 approx)
+      txtSpr.fillSprite(p.bg);
+      txtSpr.setTextSize(1);
+      txtSpr.setTextDatum(TL_DATUM);
+      uint32_t now = millis();
+      for (uint8_t i = 0; i < tama.nLines && i < 3; i++) {
+        txtSpr.setTextColor(i == 0 ? p.text : p.textDim, p.bg);
+        int tw = txtSpr.textWidth(tama.lines[i]);
+        int x = 0;
+        if (tw > 145) {
+          int range = tw - 145;
+          int offset = (now / 40) % (range * 2);
+          if (offset > range)
+            offset = range * 2 - offset;
+          x -= offset;
+        }
+        txtSpr.drawString(tama.lines[i], x, i * 11);
+      }
+      txtSpr.pushSprite(175, 138); // Push only the transcript block
+      transcriptWasActive = true;
     }
-    txtSpr.pushSprite(175, 138); // Push only the transcript block
   } else {
+    // Only clear once on the transition from active→inactive; doing the
+    // fillRect every frame causes flicker (LCD has no double-buffer for
+    // direct writes). drawString with text+bg colors overwrites previous
+    // glyphs cleanly on subsequent frames.
+    if (transcriptWasActive) {
+      hal_get_lcd()->fillRect(175, 135, 145, 35, p.bg);
+      transcriptWasActive = false;
+    }
     hal_get_lcd()->setTextDatum(BC_DATUM);
     hal_get_lcd()->setTextSize(1);
     hal_get_lcd()->setTextColor(p.textDim, p.bg);
@@ -1067,52 +1200,134 @@ void drawInfo() {
   }
 }
 
-// Greedy word-wrap into fixed-width rows. Continuation rows get a leading
-// space. Returns number of rows written.
+// UTF-8 codepoint metrics: returns byte length and display column width.
+// ASCII / 2-byte = 1 col. CJK (3-byte) / 4-byte = 2 cols (full-width).
+// On invalid leading byte or truncated continuation, treats as 1 col / 1 byte
+// so input never stalls the wrapper.
+static inline void utf8Cp(const char *p, uint8_t *cpLen, uint8_t *cols) {
+  unsigned char c = (unsigned char)*p;
+  if (c < 0x80) {
+    *cpLen = 1;
+    *cols = 1;
+    return;
+  }
+  uint8_t len;
+  if ((c & 0xE0) == 0xC0) {
+    len = 2;
+    *cols = 1;
+  } else if ((c & 0xF0) == 0xE0) {
+    len = 3;
+    *cols = 2;
+  } else if ((c & 0xF8) == 0xF0) {
+    len = 4;
+    *cols = 2;
+  } else {
+    *cpLen = 1;
+    *cols = 1;
+    return;
+  }
+  for (uint8_t i = 1; i < len; i++) {
+    if (!p[i] || (((unsigned char)p[i]) & 0xC0) != 0x80) {
+      *cpLen = 1;
+      *cols = 1;
+      return;
+    }
+  }
+  *cpLen = len;
+}
+
+// Greedy word-wrap into fixed-width rows. UTF-8 aware: CJK chars take 2
+// columns; multi-byte sequences are never split. Continuation rows after
+// a wrap get a leading space.
 static uint8_t wrapInto(const char *in, char out[][32], uint8_t maxRows,
                         uint8_t width) {
-  uint8_t row = 0, col = 0;
+  uint8_t row = 0, col = 0, byteCol = 0;
   const char *p = in;
   while (*p && row < maxRows) {
     while (*p == ' ')
       p++; // skip leading spaces
-    // measure next word
-    const char *w = p;
-    while (*p && *p != ' ')
-      p++;
-    uint8_t wlen = p - w;
-    if (wlen == 0)
+    if (!*p)
       break;
-    uint8_t need = (col > 0 ? 1 : 0) + wlen;
-    if (col + need > width) {
-      out[row][col] = 0;
+    // measure next non-space "word" (mix of ASCII and CJK is fine)
+    const char *w = p;
+    uint8_t wBytes = 0, wCols = 0;
+    while (*p && *p != ' ') {
+      uint8_t bl, cw;
+      utf8Cp(p, &bl, &cw);
+      wBytes += bl;
+      wCols += cw;
+      p += bl;
+    }
+    if (wBytes == 0)
+      break;
+    uint8_t need = (col > 0 ? 1 : 0) + wCols;
+    if (col + need > width && col > 0) {
+      // Only wrap if current row has content; otherwise fall through to
+      // hard-break so we don't waste an empty row on a long unbreakable
+      // word (common with CJK lines that have no whitespace).
+      out[row][byteCol] = 0;
       if (++row >= maxRows)
         return row;
       out[row][0] = ' ';
+      byteCol = 1;
       col = 1; // continuation indent
     }
-    if (col > 1 || (col == 1 && out[row][0] != ' '))
-      out[row][col++] = ' ';
-    else if (col == 1 && row > 0) {
-    } // already have the indent space
-    // hard-break words that still don't fit
-    while (wlen > width - col) {
-      uint8_t take = width - col;
-      memcpy(&out[row][col], w, take);
-      col += take;
-      w += take;
-      wlen -= take;
-      out[row][col] = 0;
+    if (col > 1 || (col == 1 && out[row][0] != ' ')) {
+      if (byteCol < 31) {
+        out[row][byteCol++] = ' ';
+        col++;
+      }
+    }
+    // hard-break words that still don't fit, codepoint by codepoint
+    while (wCols > width - col) {
+      uint8_t taken = 0, takenBytes = 0;
+      const char *q = w;
+      while (taken < width - col) {
+        uint8_t bl, cw;
+        utf8Cp(q, &bl, &cw);
+        if (taken + cw > width - col)
+          break;
+        if (byteCol + bl >= 31)
+          break;
+        for (uint8_t i = 0; i < bl; i++)
+          out[row][byteCol++] = q[i];
+        col += cw;
+        taken += cw;
+        takenBytes += bl;
+        q += bl;
+      }
+      // safety: ensure forward progress (e.g. a CJK char on a tight row)
+      if (takenBytes == 0) {
+        uint8_t bl, cw;
+        utf8Cp(w, &bl, &cw);
+        if (bl > 0 && byteCol + bl < 31) {
+          for (uint8_t i = 0; i < bl; i++)
+            out[row][byteCol++] = w[i];
+          col += cw;
+          taken += cw;
+          takenBytes += bl;
+        } else {
+          break;
+        }
+      }
+      out[row][byteCol] = 0;
       if (++row >= maxRows)
         return row;
       out[row][0] = ' ';
+      byteCol = 1;
       col = 1;
+      w += takenBytes;
+      wBytes -= takenBytes;
+      wCols -= taken;
     }
-    memcpy(&out[row][col], w, wlen);
-    col += wlen;
+    if (byteCol + wBytes < 31) {
+      for (uint8_t i = 0; i < wBytes; i++)
+        out[row][byteCol++] = w[i];
+      col += wCols;
+    }
   }
   if (col > 0 && row < maxRows) {
-    out[row][col] = 0;
+    out[row][byteCol] = 0;
     row++;
   }
   return row;
@@ -1412,18 +1627,28 @@ void drawHUD() {
     // --- Landscape HUD: Unified with Clock ---
     drawClock();
 
-    // drawClock already handled pet, clock and clearing.
-    // Overlay the status message at the bottom center of the right half.
-    hal_get_lcd()->setTextDatum(BC_DATUM);
-    hal_get_lcd()->setTextSize(1);
-    hal_get_lcd()->setTextColor(p.textDim, p.bg);
-    hal_get_lcd()->drawString(tama.msg, 230, 160);
-    hal_get_lcd()->setTextDatum(TL_DATUM);
+    // drawClock already handled pet, clock, and (if active) the transcript.
+    // Only overlay tama.msg when transcript is NOT active — otherwise the
+    // status text would clobber transcript line 2 (both occupy y=140..170).
+    bool transcriptActive = tama.nLines > 0 &&
+        (int32_t)(transcriptActiveUntilMs - millis()) > 0;
+    if (!transcriptActive) {
+      hal_get_lcd()->setTextDatum(BC_DATUM);
+      hal_get_lcd()->setTextSize(1);
+      hal_get_lcd()->setTextColor(p.textDim, p.bg);
+      hal_get_lcd()->drawString(tama.msg, 230, 160);
+      hal_get_lcd()->setTextDatum(TL_DATUM);
+    }
     return;
   }
 
   // --- Traditional Portrait HUD ---
-  const int SHOW = 6, LH = 10, WIDTH = 26;
+  // Layout adapts to whether the CJK font is available. ASCII layout: 6
+  // lines of 10px = 60px area. CJK layout: 4 lines of 15px = 60px area —
+  // matches the font's yAdvance to prevent descender overlap.
+  const int SHOW = zhFontReady ? 4 : 6;
+  const int LH = zhFontReady ? 15 : 10;
+  const int WIDTH = zhFontReady ? 22 : 26;
   const int AREA = SHOW * LH + 8;
   spr.fillRect(0, H - AREA, W, AREA, p.bg);
   spr.setTextSize(1);
@@ -1460,12 +1685,29 @@ void drawHUD() {
   if (start < 0)
     start = 0;
   uint8_t newest = tama.nLines - 1;
-  for (int i = 0; start + i < end; i++) {
-    uint8_t row = start + i;
-    bool fresh = (srcOf[row] == newest) && (msgScroll == 0);
-    spr.setTextColor(fresh ? p.text : p.textDim, p.bg);
-    spr.setCursor(4, H - AREA + 2 + i * LH);
-    spr.print(disp[row]);
+
+  if (zhFontReady) {
+    // Render to zhSpr (smooth font), then COMPOSITE into the main `spr` via
+    // pushToSprite. We must NOT pushSprite to LCD here, because spr.pushSprite
+    // runs at end-of-frame and would overwrite our transcript with bg.
+    zhSpr.fillSprite(p.bg);
+    for (int i = 0; start + i < end; i++) {
+      uint8_t row = start + i;
+      bool fresh = (srcOf[row] == newest) && (msgScroll == 0);
+      zhSpr.setTextColor(fresh ? p.text : p.textDim, p.bg);
+      zhSpr.setCursor(4, 2 + i * LH);
+      zhSpr.print(disp[row]);
+    }
+    zhSprOwner = ZH_HUD_PORTRAIT;
+    zhSpr.pushToSprite(&spr, 0, H - AREA);
+  } else {
+    for (int i = 0; start + i < end; i++) {
+      uint8_t row = start + i;
+      bool fresh = (srcOf[row] == newest) && (msgScroll == 0);
+      spr.setTextColor(fresh ? p.text : p.textDim, p.bg);
+      spr.setCursor(4, H - AREA + 2 + i * LH);
+      spr.print(disp[row]);
+    }
   }
   if (msgScroll > 0) {
     spr.setTextColor(p.body, p.bg);
@@ -1483,10 +1725,10 @@ void setup() {
   if (!LittleFS.begin()) {
     Serial.println("[ERROR] LittleFS Mount Failed!");
   } else {
-    Serial.printf("[SYSTEM] FS Space: %lu/%lu KB used\n", 
-                  (unsigned long)LittleFS.usedBytes()/1024, 
+    Serial.printf("[SYSTEM] FS Space: %lu/%lu KB used\n",
+                  (unsigned long)LittleFS.usedBytes()/1024,
                   (unsigned long)LittleFS.totalBytes()/1024);
-    
+
     Serial.println("[SYSTEM] Scanning for Pets...");
     fs::File root = LittleFS.open("/characters");
     if (root && root.isDirectory()) {
@@ -1515,6 +1757,23 @@ void setup() {
   spr.createSprite(W, H);
   petSpr.createSprite(170, 170);
   txtSpr.createSprite(150, 170);
+
+  // Optional CJK transcript font. Falls back to ASCII bitmap if file missing
+  // or sprite alloc fails — never blocks boot.
+  // Sprite sized 170x170 so the same buffer handles both: 4-line HUD bottom
+  // strip AND 10-line idle-clock-replacement transcript view.
+  if (LittleFS.exists("/ZhTW12.vlw")) {
+    zhSpr.setColorDepth(16);
+    if (zhSpr.createSprite(170, 170)) {
+      zhSpr.loadFont("ZhTW12", LittleFS);
+      zhSpr.setTextDatum(TL_DATUM);
+      zhFontReady = true;
+      Serial.println("[SYSTEM] Chinese transcript font loaded");
+    } else {
+      Serial.println("[WARN] zhSpr alloc failed; transcript stays ASCII");
+    }
+  }
+
   characterInit(nullptr);
   gifAvailable = characterLoaded();
   Serial.printf("GIF Pet Available: %s\n", gifAvailable ? "YES" : "NO");
@@ -1576,6 +1835,14 @@ void loop() {
   t++;
 
   dataPoll(&tama);
+  // Transcript activity tracker: each new line resets the hold timer so the
+  // portrait clock view shows transcript instead of time for HOLD_MS ms after
+  // the most recent line arrived.
+  if (tama.lineGen != lastSeenLineGen) {
+    lastSeenLineGen = tama.lineGen;
+    transcriptActiveUntilMs = millis() + TRANSCRIPT_HOLD_MS;
+    wake();
+  }
   if (statsPollLevelUp())
     triggerOneShot(P_CELEBRATE, 3000);
   baseState = derive(tama);
