@@ -191,78 +191,153 @@ bool characterInit(const char* name) {
 bool characterLoaded() { return loaded; }
 const Palette& characterPalette() { return pal; }
 
+static bool _gifAdvance() {
+  uint32_t now = millis();
+  if (!gifOpen) {
+    if (animPauseUntil && now >= animPauseUntil) {
+      animPauseUntil = 0;
+      uint8_t s = curState;
+      curState = 0xFF;
+      characterSetState(s);
+    }
+    return false;
+  }
+  if (now < nextFrameAt) return false;
+
+  int delayMs = 0;
+  if (!gif.playFrame(false, &delayMs)) {
+    if (stateCount[curState] == 1) {
+      // Single GIF variant: pause then restart
+      gif.close();
+      gifOpen = false;
+      animPauseUntil = now + ANIM_PAUSE_MS;
+      return false;
+    }
+    if (now - variantStartedMs < VARIANT_DWELL_MS) {
+      gif.reset();
+      if (!gif.playFrame(false, &delayMs)) return false;
+    } else {
+      gif.close();
+      gifOpen = false;
+      stateRot[curState] = (stateRot[curState] + 1) % stateCount[curState];
+      animPauseUntil = now + ANIM_PAUSE_MS;
+      return false;
+    }
+  }
+  nextFrameAt = now + (delayMs > 0 ? delayMs : 100);
+  return true;
+}
+
 bool characterRenderTo(TFT_eSPI* tgt, int cx, int cy) {
   if (!loaded) return false;
   if (textMode) {
-    TextState& ts = textStates[curState]; if (ts.nFrames == 0) return false;
+    TextState& ts = textStates[curState];
+    if (ts.nFrames == 0) return false;
     tgt->fillScreen(pal.bg);
     int tw = strlen(ts.frames[textFrame]) * 12;
-    tgt->setTextColor(pal.body, pal.bg); tgt->setTextSize(2);
+    tgt->setTextColor(pal.body, pal.bg);
+    tgt->setTextSize(2);
     tgt->setCursor(cx - tw / 2, cy - 8);
     tgt->print(ts.frames[textFrame]);
     return true;
   }
-  
-  uint32_t now = millis();
-  if (!gifOpen) {
-    // If not open, it might be in a pause.
-    if (animPauseUntil && now < animPauseUntil) return false;
-    // Try to restart if we were expecting to be open
-    characterSetState(curState); 
-    if (!gifOpen) return false;
-  }
-  if (now < nextFrameAt) return false;
 
-  tgt->fillScreen(pal.bg);
-  TFT_eSPI* prevT = _tgt; bool prevP = peekMode; int px = gifX, py = gifY;
-  _tgt = tgt; peekMode = false;
+  // Set up rendering context for the target sprite
+  TFT_eSPI* prevT = _tgt;
+  bool prevP = peekMode;
+  int px = gifX, py = gifY;
+
+  _tgt = tgt;
+  peekMode = false;
   gifX = cx - gifW / 2;
   gifY = cy - gifH / 2;
-  
-  int delayMs = 0;
-  if (!gif.playFrame(false, &delayMs)) { 
-    gif.reset(); 
-    gif.playFrame(false, &delayMs); 
-  }
-  nextFrameAt = now + (delayMs > 0 ? delayMs : 100);
-  
-  _tgt = prevT; peekMode = prevP; gifX = px; gifY = py;
-  return true;
+  tgt->fillScreen(pal.bg);
+
+  bool updated = _gifAdvance();
+
+  // Restore context
+  _tgt = prevT;
+  peekMode = prevP;
+  gifX = px;
+  gifY = py;
+
+  return updated;
 }
 
-void characterSetPeek(bool peek) { if (peekMode != peek) { peekMode = peek; characterInvalidate(); } }
-static uint8_t* gifBuffer = nullptr;
-static int      gifBufferSize = 0;
+void characterSetPeek(bool peek) {
+  if (peekMode != peek) {
+    peekMode = peek;
+    characterInvalidate();
+  }
+}
 
-void characterClose() { 
-  if (gifOpen) { gif.close(); gifOpen = false; } 
-  if (gifBuffer) { free(gifBuffer); gifBuffer = nullptr; gifBufferSize = 0; }
-  loaded = false; textMode = false; curState = 0xFF; 
+static uint8_t* gifBuffer = nullptr;
+static int gifBufferSize = 0;
+
+void characterClose() {
+  if (gifOpen) {
+    gif.close();
+    gifOpen = false;
+  }
+  if (gifBuffer) {
+    free(gifBuffer);
+    gifBuffer = nullptr;
+    gifBufferSize = 0;
+  }
+  loaded = false;
+  textMode = false;
+  curState = 0xFF;
 }
 
 void characterInvalidate() {
   if (!loaded) return;
-  if (textMode) { spr.fillSprite(pal.bg); uint8_t s = curState; curState = 0xFF; characterSetState(s); return; }
-  if (gifOpen) { gif.close(); gifOpen = false; }
-  animPauseUntil = 0; uint8_t s = curState; curState = 0xFF; characterSetState(s);
+  if (textMode) {
+    spr.fillSprite(pal.bg);
+    uint8_t s = curState;
+    curState = 0xFF;
+    characterSetState(s);
+    return;
+  }
+  if (gifOpen) {
+    gif.close();
+    gifOpen = false;
+  }
+  animPauseUntil = 0;
+  uint8_t s = curState;
+  curState = 0xFF;
+  characterSetState(s);
 }
 
 void characterSetState(uint8_t s) {
   if (!loaded || s >= N_STATES || s == curState) return;
-  if (textMode) { curState = s; textFrame = 0; textNext = 0; spr.fillSprite(pal.bg); return; }
-  
+  if (textMode) {
+    curState = s;
+    textFrame = 0;
+    textNext = 0;
+    spr.fillSprite(pal.bg);
+    return;
+  }
+
   // Prepare for state change
-  bool wasOpen = gifOpen;
-  if (gifOpen) { gif.close(); gifOpen = false; }
-  
+  if (gifOpen) {
+    gif.close();
+    gifOpen = false;
+  }
+
   // Free old buffer
-  if (gifBuffer) { free(gifBuffer); gifBuffer = nullptr; gifBufferSize = 0; }
-  
-  animPauseUntil = 0; curState = s;
+  if (gifBuffer) {
+    free(gifBuffer);
+    gifBuffer = nullptr;
+    gifBufferSize = 0;
+  }
+
+  animPauseUntil = 0;
+  curState = s;
   if (stateCount[s] == 0) return;
   uint8_t idx = stateStart[s] + stateRot[s];
-  char full[80]; snprintf(full, sizeof(full), "%s/%s", basePath, gifPaths[idx]);
-  
+  char full[80];
+  snprintf(full, sizeof(full), "%s/%s", basePath, gifPaths[idx]);
+
   // Read entire file into RAM
   fs::File f = LittleFS.open(full, "r");
   if (f) {
@@ -272,13 +347,16 @@ void characterSetState(uint8_t s) {
       f.read(gifBuffer, gifBufferSize);
       f.close();
       if (gif.open(gifBuffer, gifBufferSize, gifDrawCb)) {
-        gifOpen = true; gifW = gif.getCanvasWidth(); gifH = gif.getCanvasHeight(); gifPlace();
-        
+        gifOpen = true;
+        gifW = gif.getCanvasWidth();
+        gifH = gif.getCanvasHeight();
+        gifPlace();
+
         // Immediately draw the first frame to prevent flickering during transition
         spr.fillSprite(pal.bg);
         int delayMs = 0;
         gif.playFrame(false, &delayMs);
-        
+
         nextFrameAt = millis() + (delayMs > 0 ? delayMs : 100);
         variantStartedMs = millis();
       }
@@ -291,37 +369,21 @@ void characterSetState(uint8_t s) {
 void characterTick() {
   if (!loaded) return;
   if (textMode) {
-    TextState& ts = textStates[curState]; if (ts.nFrames == 0) return;
-    uint32_t now = millis(); if (now < textNext) return;
+    TextState& ts = textStates[curState];
+    if (ts.nFrames == 0) return;
+    uint32_t now = millis();
+    if (now < textNext) return;
     textNext = now + ts.delayMs;
     int cy = peekMode ? 35 : 60;
     spr.fillRect(0, cy - 14, spr.width(), 28, pal.bg);
     int tw = strlen(ts.frames[textFrame]) * 12;
-    spr.setTextColor(pal.body, pal.bg); spr.setTextSize(2);
+    spr.setTextColor(pal.body, pal.bg);
+    spr.setTextSize(2);
     spr.setCursor((spr.width() - tw) / 2, cy - 8);
     spr.print(ts.frames[textFrame]);
-    textFrame = (textFrame + 1) % ts.nFrames; return;
-  }
-  uint32_t now = millis();
-  if (!gifOpen) {
-    if (animPauseUntil && now >= animPauseUntil) {
-      animPauseUntil = 0; uint8_t s = curState; curState = 0xFF; characterSetState(s);
-    }
+    textFrame = (textFrame + 1) % ts.nFrames;
     return;
   }
-  if (now < nextFrameAt) return;
-  int delayMs = 0;
-  if (!gif.playFrame(false, &delayMs)) {
-    if (stateCount[curState] == 1) { 
-      // Single GIF variant: pause then restart
-      gif.close(); gifOpen = false;
-      animPauseUntil = now + ANIM_PAUSE_MS; 
-      return; 
-    }
-    if (now - variantStartedMs < VARIANT_DWELL_MS) { gif.reset(); nextFrameAt = now; return; }
-    gif.close(); gifOpen = false;
-    stateRot[curState] = (stateRot[curState] + 1) % stateCount[curState];
-    animPauseUntil = now + ANIM_PAUSE_MS; return;
-  }
-  nextFrameAt = now + (delayMs > 0 ? delayMs : 100);
+
+  _gifAdvance();
 }

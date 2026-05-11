@@ -2253,14 +2253,17 @@ void loop() {
   } else // In landscape mode, the dedicated drawInfo/drawPet/drawClock handle
     // their own pet rendering to ensure proper scaling and positioning.
     // We only run the background ticks in portrait (normal) mode.
-    if (clockOrient == 0) {
-      if (buddyMode)
-        buddyTick(activeState);
-      else if (characterLoaded()) {
-        characterSetState(activeState);
-        characterTick();
-      }
-    } else {
+  if (characterLoaded()) {
+    characterSetState(activeState);
+  }
+
+  if (clockOrient == 0) {
+    if (buddyMode) {
+      buddyTick(activeState);
+    } else if (characterLoaded()) {
+      characterTick();
+    }
+  } else {
       const Palette &p = characterPalette();
       spr.fillSprite(p.bg);
       spr.setTextColor(p.textDim, p.bg);
