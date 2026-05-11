@@ -196,7 +196,7 @@ const uint8_t INFO_PG_BUTTONS = 1;
 const uint8_t INFO_PG_CREDITS = 5;
 void drawPet();
 void drawHUD();
-static uint8_t wrapInto(const char *in, char out[][32], uint8_t maxRows,
+static uint8_t wrapInto(const char *in, char out[][48], uint8_t maxRows,
                         uint8_t width);
 static void clockUpdateOrient();
 static void renderLandscapePet(int cx, int cy, bool force = false);
@@ -807,7 +807,7 @@ static void drawClock() {
         (int32_t)(transcriptActiveUntilMs - millis()) > 0;
     if (transcriptActive) {
       const int LH = 15;
-      const int WIDTH = 22;
+      const int WIDTH = 26;
       const int SHOW = 10;
 
       // Smooth-font rendering of ~220 CJK glyphs costs ~50ms/frame; doing it
@@ -825,7 +825,7 @@ static void drawClock() {
           (contentChanged && (nowMs - lastRenderMs >= 300));
 
       if (needRender) {
-        static char tdisp[32][32];
+        static char tdisp[32][48];
         static uint8_t tsrcOf[32];
         uint8_t nDisp = 0;
         for (uint8_t i = 0; i < tama.nLines && nDisp < 32; i++) {
@@ -1386,7 +1386,7 @@ static inline void utf8Cp(const char *p, uint8_t *cpLen, uint8_t *cols) {
 // Greedy word-wrap into fixed-width rows. UTF-8 aware: CJK chars take 2
 // columns; multi-byte sequences are never split. Continuation rows after
 // a wrap get a leading space.
-static uint8_t wrapInto(const char *in, char out[][32], uint8_t maxRows,
+static uint8_t wrapInto(const char *in, char out[][48], uint8_t maxRows,
                         uint8_t width) {
   uint8_t row = 0, col = 0, byteCol = 0;
   const char *p = in;
@@ -1420,7 +1420,7 @@ static uint8_t wrapInto(const char *in, char out[][32], uint8_t maxRows,
       col = 1; // continuation indent
     }
     if (col > 1 || (col == 1 && out[row][0] != ' ')) {
-      if (byteCol < 31) {
+      if (byteCol < 47) {
         out[row][byteCol++] = ' ';
         col++;
       }
@@ -1434,7 +1434,7 @@ static uint8_t wrapInto(const char *in, char out[][32], uint8_t maxRows,
         utf8Cp(q, &bl, &cw);
         if (taken + cw > width - col)
           break;
-        if (byteCol + bl >= 31)
+        if (byteCol + bl >= 47)
           break;
         for (uint8_t i = 0; i < bl; i++)
           out[row][byteCol++] = q[i];
@@ -1447,7 +1447,7 @@ static uint8_t wrapInto(const char *in, char out[][32], uint8_t maxRows,
       if (takenBytes == 0) {
         uint8_t bl, cw;
         utf8Cp(w, &bl, &cw);
-        if (bl > 0 && byteCol + bl < 31) {
+        if (bl > 0 && byteCol + bl < 47) {
           for (uint8_t i = 0; i < bl; i++)
             out[row][byteCol++] = w[i];
           col += cw;
@@ -1467,7 +1467,7 @@ static uint8_t wrapInto(const char *in, char out[][32], uint8_t maxRows,
       wBytes -= takenBytes;
       wCols -= taken;
     }
-    if (byteCol + wBytes < 31) {
+    if (byteCol + wBytes < 47) {
       for (uint8_t i = 0; i < wBytes; i++)
         out[row][byteCol++] = w[i];
       col += wCols;
@@ -1795,7 +1795,7 @@ void drawHUD() {
   // matches the font's yAdvance to prevent descender overlap.
   const int SHOW = zhFontReady ? 4 : 6;
   const int LH = zhFontReady ? 15 : 10;
-  const int WIDTH = zhFontReady ? 22 : 26;
+  const int WIDTH = zhFontReady ? 26 : 26;
   const int AREA = SHOW * LH + 8;
   spr.fillRect(0, H - AREA, W, AREA, p.bg);
   spr.setTextSize(1);
@@ -1813,7 +1813,7 @@ void drawHUD() {
     return;
   }
 
-  static char disp[32][32];
+  static char disp[32][48];
   static uint8_t srcOf[32];
   uint8_t nDisp = 0;
   for (uint8_t i = 0; i < tama.nLines && nDisp < 32; i++) {
