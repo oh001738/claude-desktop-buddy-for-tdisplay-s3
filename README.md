@@ -14,12 +14,19 @@ This project is a high-performance port and enhancement for the **LilyGo T-Displ
 *   **📐 Dual Orientation Support**: Seamlessly switch between Portrait (170x320) and Landscape (320x170) modes. Settings are persisted to NVS.
 *   **📜 Smart Marquee**: In landscape mode, long messages from Claude automatically scroll (ping-pong effect) to ensure full legibility.
 *   **💡 High-Frequency PWM Dimming**: Smooth 4-level brightness control via 5000Hz PWM on GPIO 38.
+*   **💾 Persistent Memory**: Automatically remembers your display orientation and brightness settings across reboots.
 *   **🛡️ Stable Modal System**: Refactored Tool Approval UI using a flicker-free sprite overlay system.
 *   **🔋 Advanced HUD**: Integrated status for battery voltage, Bluetooth pairing, and real-time conversation transcripts.
+*   **🇨🇳 Full Chinese Transcript**: Fully utilizes the portrait width (170px) for smooth CJK font rendering.
 
 ## ⚡ Quick Flashing for Users
 
-If you don't want to compile the code yourself, use the [ESP Web Flasher](https://web.esphome.io/) with these binaries and offsets:
+If you don't want to compile the code yourself, you can easily flash the pre-compiled firmware using your browser:
+
+1. Download the 4 `.bin` files from the [Latest GitHub Release](https://github.com/oh001738/claude-desktop-buddy-for-tdisplay-s3/releases).
+2. Open the [ESP Web Flasher](https://web.esphome.io/) in Chrome or Edge.
+3. Connect your T-Display S3 via USB and click **Connect**.
+4. Add the downloaded files with their exact offsets:
 
 | Binary File       | Flash Address | Description                 |
 | ----------------- | ------------- | --------------------------- |
@@ -27,6 +34,41 @@ If you don't want to compile the code yourself, use the [ESP Web Flasher](https:
 | `partitions.bin`  | `0x8000`      | Partition table (no_ota)    |
 | `firmware.bin`    | `0x10000`     | Main application            |
 | `littlefs.bin`    | `0x290000`    | Character assets & pets     |
+
+5. Click **Program** and wait for the device to reboot!
+
+## 🎮 Operation Instructions
+
+| Action                  | Portrait Mode          | Landscape Mode             |
+| ----------------------- | ---------------------- | -------------------------- |
+| **Front Button (Btn A)**| Change Display / Approve| Approve Tool Request       |
+| **Side Button (Btn B)** | Scroll Log / Next Page | Deny Request / Change Rot  |
+| **Long Press Btn A**    | Open Menu              | Open Menu                  |
+| **Power Button (Short)**| Screen Sleep / Wake    | Screen Sleep / Wake        |
+| **Shake Device**        | Trigger Dizzy Animation| Trigger Dizzy Animation    |
+| **Face Down**           | Sleep Mode (Regen NRG) | Sleep Mode (Regen NRG)     |
+
+## 📂 Character System
+
+The device supports both classic ASCII pets and modern GIF characters.
+
+### ASCII Buddies (18 Species)
+Cycles through: *Axolotl, Blob, Cactus, Capybara, Cat, Chonk, Dragon, Duck, Ghost, Goose, Mushroom, Octopus, Owl, Penguin, Rabbit, Robot, Snail, Turtle.*
+
+### GIF Character Pack (`manifest.json`)
+A character pack is a folder containing a JSON manifest and optimized GIFs (Recommended width: 96px, max height: 160px).
+```json
+{
+  "name": "bufo",
+  "colors": { "body": "#6B8E23", "bg": "#000000", "text": "#FFFFFF" },
+  "states": {
+    "sleep": "sleep.gif",
+    "idle": ["idle_1.gif", "idle_2.gif"],
+    "busy": "busy.gif",
+    "attention": "attention.gif"
+  }
+}
+```
 
 ## 🛠️ Development & Tools
 
@@ -41,31 +83,10 @@ pio run -e lilygo-t-display-s3 -t uploadfs
 ```
 
 ### Included Python Utilities (`tools/`)
-*   **`prep_character.py`**: Resizes source GIFs to 96px width and optimizes them for the device.
-*   **`flash_character.py`**: Side-loads a character pack folder directly to the device over USB.
+*   **`level_up.py`**: Spoof token counts via serial to artificially level up your Buddy.
+*   **`prep_character.py`**: Resizes source GIFs to 96px width and optimizes them.
+*   **`flash_character.py`**: Side-loads a character pack folder over USB.
 *   **`test_xfer.py`**: Debugging tool for the BLE folder-push protocol.
-
-## 📂 Character System
-
-The device supports both classic ASCII pets and modern GIF characters.
-
-### ASCII Buddies (18 Species)
-Cycles through: *Axolotl, Blob, Cactus, Capybara, Cat, Chonk, Dragon, Duck, Ghost, Goose, Mushroom, Octopus, Owl, Penguin, Rabbit, Robot, Snail, Turtle.*
-
-### GIF Character Pack (`manifest.json`)
-A character pack is a folder containing a JSON manifest and optimized GIFs.
-```json
-{
-  "name": "bufo",
-  "colors": { "body": "#6B8E23", "bg": "#000000", "text": "#FFFFFF" },
-  "states": {
-    "sleep": "sleep.gif",
-    "idle": ["idle_1.gif", "idle_2.gif"],
-    "busy": "busy.gif",
-    "attention": "attention.gif"
-  }
-}
-```
 
 ## 📡 Developer: BLE Protocol
 
@@ -76,5 +97,4 @@ The device uses the **Nordic UART Service (NUS)** for low-latency communication.
 *   **Pairing**: MITM / Passkey Entry (DisplayOnly).
 
 ---
-
 *Note: This is a community-driven port of the original Claude Buddy project.*
