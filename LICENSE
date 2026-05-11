@@ -9,3 +9,5 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ---
 
 The GIF assets in characters/bufo/ are from the community "bufo" emoji set (https://bufo.zone). They are third-party artwork redistributed for convenience and are not covered by the MIT license above; all rights remain with their original creators. See characters/bufo/README.md.
+
+The font "Zpix" (ZhTW12.vlw) used in this project is created by SolidZORO (https://github.com/SolidZORO/zpix-pixel-font). It is a third-party asset and is not covered by the MIT license above. According to the author's license, it is FREE for personal and educational projects, but requires a commercial license for commercial use. Please refer to the original repository for detailed licensing terms.

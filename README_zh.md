@@ -96,5 +96,9 @@ pio run -e lilygo-t-display-s3 -t uploadfs
 *   **TX UUID**: `6e400003-b5a3-f393-e0a9-e50e24dcca9e` (通知)
 *   **配對模式**: MITM / Passkey Entry (DisplayOnly)。
 
+## ✒️ 致謝與字體聲明
+*   **[Zpix (最像素)](https://github.com/SolidZORO/zpix-pixel-font)**：本專案使用的中文字體，由 **SolidZORO** 開發。本專案為個人非營利性質，符合其個人免費使用條款。若您打算將本專案用於商業用途，請務必聯繫原作者取得正式授權。
+*   **[bufo](https://bufo.zone)**：內建的角色素材來源。
+
 ---
 *註：本專案為社群驅動的移植版本，旨在優化硬體體驗，非官方正式產品功能。*

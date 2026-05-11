@@ -96,5 +96,9 @@ The device uses the **Nordic UART Service (NUS)** for low-latency communication.
 *   **TX UUID**: `6e400003-b5a3-f393-e0a9-e50e24dcca9e` (Notify)
 *   **Pairing**: MITM / Passkey Entry (DisplayOnly).
 
+## ✒️ Credits & Font Attribution
+*   **[Zpix (最像素)](https://github.com/SolidZORO/zpix-pixel-font)**: The Chinese pixel font used in this project, created by **SolidZORO**. This project is personal and non-commercial, adhering to its personal-use license. For commercial use, please contact the author for licensing.
+*   **[bufo](https://bufo.zone)**: Original assets for the built-in character.
+
 ---
 *Note: This is a community-driven port of the original Claude Buddy project.*
