@@ -3,6 +3,7 @@
 #include <ArduinoJson.h>
 #include "ble_bridge.h"
 #include "xfer.h"
+#include "stats.h"
 
 struct TamaState {
   uint8_t  sessionsTotal;
@@ -36,15 +37,16 @@ static uint32_t _demoNext   = 0;
 
 struct _Fake { 
   const char* n; uint8_t t,r,w; bool c; uint32_t tok; 
-  const char* line1; const char* line2;
+  const char* line1_en; const char* line1_zh;
+  const char* line2_en; const char* line2_zh;
   const char* promptTool;
 };
 static const _Fake _FAKES[] = {
-  {"asleep",0,0,0,false,0, nullptr, nullptr, nullptr},
-  {"idle",1,0,0,false,12000, "Hello! How can I help you today?", nullptr, nullptr},
-  {"busy",4,3,0,false,89000, "I'm analyzing the logs...", "Wait, I found an error in main.cpp.", nullptr},
-  {"attention",2,1,1,false,45000, "I need to read your project config.", nullptr, "read_file"},
-  {"completed",1,0,0,true,142000, "Optimization complete!", "Boot time reduced by 40%.", nullptr},
+  {"asleep",0,0,0,false,0, nullptr, nullptr, nullptr, nullptr, nullptr},
+  {"idle",1,0,0,false,12000, "Hello! How can I help you today?", "你好！今天需要我幫忙什麼嗎？", nullptr, nullptr, nullptr},
+  {"busy",4,3,0,false,89000, "I'm analyzing the logs...", "正在分析日誌...", "Wait, I found an error in main.cpp.", "等等，我發現 main.cpp 裡有個錯誤。", nullptr},
+  {"attention",2,1,1,false,45000, "I need to read your project config.", "我需要讀取你的專案設定檔。", nullptr, nullptr, "read_file"},
+  {"completed",1,0,0,true,142000, "Optimization complete!", "最佳化完成！", "Boot time reduced by 40%.", "開機時間減少了 40%。", nullptr},
 };
 
 inline void dataSetDemo(bool on) {
@@ -154,13 +156,17 @@ inline void dataPoll(TamaState* out) {
     snprintf(out->msg, sizeof(out->msg), "demo: %s", s.n);
     
     out->nLines = 0;
-    if (s.line1) { strncpy(out->lines[0], s.line1, 91); out->nLines = 1; }
-    if (s.line2) { strncpy(out->lines[1], s.line2, 91); out->nLines = 2; }
+    bool zh = (settings().lang == 1);
+    const char* l1 = zh ? s.line1_zh : s.line1_en;
+    const char* l2 = zh ? s.line2_zh : s.line2_en;
+    if (l1) { strncpy(out->lines[0], l1, 91); out->nLines = 1; }
+    if (l2) { strncpy(out->lines[1], l2, 91); out->nLines = 2; }
     
     if (s.promptTool) {
       strncpy(out->promptId, "demo-id", 39);
       strncpy(out->promptTool, s.promptTool, 19);
-      strncpy(out->promptHint, "Claude wants to access local files.", 43);
+      const char* hint = zh ? "Claude 想要存取本機檔案。" : "Claude wants to access local files.";
+      strncpy(out->promptHint, hint, 43);
     } else {
       out->promptId[0] = 0;
     }
