@@ -7,11 +7,19 @@
 #include <WiFiClientSecure.h>
 #include <WiFiManager.h>
 
-const char* CURRENT_VERSION = "v1.0.7";
+const char* CURRENT_VERSION = "v1.0.8";
 const char* GITHUB_API_URL = "https://api.github.com/repos/oh001738/claude-desktop-buddy-for-tdisplay-s3/releases/latest";
 
 static void (*_progCb)(const char* status, int progress) = nullptr;
 extern void drawWifiPortalScreen(const char* apName);
+
+// Cleanly shut down Wi-Fi and persist the OFF state to NVS
+static void wifiShutdown() {
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+    settings().wifi = false;
+    settingsSave();
+}
 
 static int last_pct = -1;
 static void update_progress(int cur, int total) {
@@ -76,6 +84,7 @@ bool otaUpdateFlow(void (*progressCallback)(const char* status, int progress), c
     String storedSsid = WiFi.SSID();
     if (storedSsid.length() == 0) {
         snprintf(errBuf, errBufLen, "Wi-Fi not configured. Go to menu and turn Wi-Fi ON.");
+        // Don't persist wifi=false here — the user hasn't configured it yet
         WiFi.disconnect(true);
         WiFi.mode(WIFI_OFF);
         return false;
@@ -87,7 +96,7 @@ bool otaUpdateFlow(void (*progressCallback)(const char* status, int progress), c
         int elapsed = (millis() - startMs) / 1000;
         if (elapsed > 15) {
             snprintf(errBuf, errBufLen, "Wi-Fi Timeout (SSID: %s)", storedSsid.c_str());
-            WiFi.disconnect(true);
+            wifiShutdown();
             return false;
         }
         int prog = (elapsed * 90) / 15;
@@ -105,7 +114,7 @@ bool otaUpdateFlow(void (*progressCallback)(const char* status, int progress), c
     // GitHub API requires User-Agent
     if (!http.begin(apiClient, GITHUB_API_URL)) {
         snprintf(errBuf, errBufLen, "Failed to connect to GitHub API");
-        WiFi.disconnect(true);
+        wifiShutdown();
         return false;
     }
     http.addHeader("User-Agent", "ESP32-OTA-Client");
@@ -114,7 +123,7 @@ bool otaUpdateFlow(void (*progressCallback)(const char* status, int progress), c
     if (httpCode != HTTP_CODE_OK) {
         snprintf(errBuf, errBufLen, "GitHub API HTTP Error: %d", httpCode);
         http.end();
-        WiFi.disconnect(true);
+        wifiShutdown();
         return false;
     }
 
@@ -132,20 +141,20 @@ bool otaUpdateFlow(void (*progressCallback)(const char* status, int progress), c
 
     if (error) {
         snprintf(errBuf, errBufLen, "JSON parse error: %s", error.c_str());
-        WiFi.disconnect(true);
+        wifiShutdown();
         return false;
     }
 
     const char* latestVersion = doc["tag_name"];
     if (!latestVersion) {
         snprintf(errBuf, errBufLen, "No tag_name found in release");
-        WiFi.disconnect(true);
+        wifiShutdown();
         return false;
     }
 
     if (strcmp(latestVersion, CURRENT_VERSION) == 0) {
         snprintf(errBuf, errBufLen, "Up to date (%s)", CURRENT_VERSION);
-        WiFi.disconnect(true);
+        wifiShutdown(); // Turn off Wi-Fi and persist OFF state even when already up to date
         return false;
     }
 
@@ -161,7 +170,7 @@ bool otaUpdateFlow(void (*progressCallback)(const char* status, int progress), c
 
     if (!downloadUrl) {
         snprintf(errBuf, errBufLen, "firmware.bin not found in release %s", latestVersion);
-        WiFi.disconnect(true);
+        wifiShutdown();
         return false;
     }
 
@@ -174,7 +183,7 @@ bool otaUpdateFlow(void (*progressCallback)(const char* status, int progress), c
         testHttp.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
         if (!testHttp.begin(testClient, downloadUrl)) {
             snprintf(errBuf, errBufLen, "DBG: testHttp begin fail");
-            WiFi.disconnect(true);
+            wifiShutdown();
             return false;
         }
         testHttp.addHeader("User-Agent", "ESP32-OTA-Client");
@@ -182,7 +191,7 @@ bool otaUpdateFlow(void (*progressCallback)(const char* status, int progress), c
         if (code != 200) {
             snprintf(errBuf, errBufLen, "DBG HTTP: %d", code);
             testHttp.end();
-            WiFi.disconnect(true);
+            wifiShutdown();
             return false;
         }
         
@@ -196,7 +205,7 @@ bool otaUpdateFlow(void (*progressCallback)(const char* status, int progress), c
         if (r < 16) {
             snprintf(errBuf, errBufLen, "DBG Read: %d B", r);
             testHttp.end();
-            WiFi.disconnect(true);
+            wifiShutdown();
             return false;
         }
         
@@ -209,7 +218,7 @@ bool otaUpdateFlow(void (*progressCallback)(const char* status, int progress), c
             snprintf(errBuf, errBufLen, "Not bin: %02X %02X / %s", 
                      buf[0], buf[1], (char*)buf);
             testHttp.end();
-            WiFi.disconnect(true);
+            wifiShutdown();
             return false;
         }
         testHttp.end();
@@ -226,10 +235,7 @@ bool otaUpdateFlow(void (*progressCallback)(const char* status, int progress), c
 
     if (ret == HTTP_UPDATE_OK) {
         // OTA succeeded — turn off Wi-Fi, persist the setting, then reboot
-        WiFi.disconnect(true);
-        WiFi.mode(WIFI_OFF);
-        settings().wifi = false;
-        settingsSave();
+        wifiShutdown();
         delay(300);
         ESP.restart();
     }
@@ -242,6 +248,6 @@ bool otaUpdateFlow(void (*progressCallback)(const char* status, int progress), c
         snprintf(errBuf, errBufLen, "No updates available");
     }
 
-    WiFi.disconnect(true);
+    wifiShutdown();
     return false;
 }
