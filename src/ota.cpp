@@ -160,6 +160,7 @@ bool otaUpdateFlow(void (*progressCallback)(const char* status, int progress), c
     progressCallback("Downloading", 0);
     httpUpdate.onProgress(update_progress);
     httpUpdate.rebootOnUpdate(true);
+    httpUpdate.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
 
     t_httpUpdate_return ret = httpUpdate.update(client, downloadUrl);
 
