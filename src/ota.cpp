@@ -7,7 +7,7 @@
 #include <WiFiClientSecure.h>
 #include <WiFiManager.h>
 
-const char* CURRENT_VERSION = "v1.0.6";
+const char* CURRENT_VERSION = "v1.0.7";
 const char* GITHUB_API_URL = "https://api.github.com/repos/oh001738/claude-desktop-buddy-for-tdisplay-s3/releases/latest";
 
 static void (*_progCb)(const char* status, int progress) = nullptr;
@@ -217,13 +217,24 @@ bool otaUpdateFlow(void (*progressCallback)(const char* status, int progress), c
 
     progressCallback("Downloading", 0);
     httpUpdate.onProgress(update_progress);
-    httpUpdate.rebootOnUpdate(true);
+    httpUpdate.rebootOnUpdate(false); // Manual reboot so we can save settings first
     httpUpdate.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
 
     WiFiClientSecure updateClient;
     updateClient.setInsecure();
     t_httpUpdate_return ret = httpUpdate.update(updateClient, downloadUrl);
 
+    if (ret == HTTP_UPDATE_OK) {
+        // OTA succeeded — turn off Wi-Fi, persist the setting, then reboot
+        WiFi.disconnect(true);
+        WiFi.mode(WIFI_OFF);
+        settings().wifi = false;
+        settingsSave();
+        delay(300);
+        ESP.restart();
+    }
+
+    // Reached only on failure
     if (ret == HTTP_UPDATE_FAILED) {
         snprintf(errBuf, errBufLen, "OTA fail: (%d) %s", 
                  httpUpdate.getLastError(), httpUpdate.getLastErrorString().c_str());
