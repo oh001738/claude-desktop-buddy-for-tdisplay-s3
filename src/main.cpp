@@ -144,26 +144,7 @@ uint32_t promptArrivedMs = 0;
 
 // Face-down = Z-axis dominant and negative. Debounced so a toss doesn't count.
 static void applyBrightness() {
-  uint8_t pwm;
-  switch (brightLevel) {
-  case 0:
-    pwm = 100;
-    break;
-  case 1:
-    pwm = 140;
-    break;
-  case 2:
-    pwm = 180;
-    break;
-  case 3:
-    pwm = 220;
-    break;
-  case 4:
-  default:
-    pwm = 255;
-    break;
-  }
-  hal_set_brightness(pwm);
+  hal_set_brightness(brightLevel);
 }
 
 static void wake() {
@@ -259,7 +240,7 @@ static void applySetting(uint8_t idx) {
   Settings &s = settings();
   switch (idx) {
   case 0:
-    brightLevel = (brightLevel + 1) % 5;
+    brightLevel = (brightLevel % 4) + 1;
     applyBrightness();
     return;
   case 1:
@@ -2102,7 +2083,7 @@ void setup() {
           
           bootSpr.drawFastHLine(sw / 2 - 50, divY, 100, lcd->color565(68, 0, 34));
           bootSpr.setTextColor(lcd->color565(255, 0, 127));
-          bootSpr.drawString("v1.1.0", sw / 2, verY, 2);
+          bootSpr.drawString("v1.1.1", sw / 2, verY, 2);
         }
         
         // 7. Scan line filter (CRT simulation) - drawn on top of everything
@@ -2532,7 +2513,7 @@ void loop() {
   if (!napping && faceDownFrames >= 15) {
     napping = true;
     napStartMs = now;
-    hal_set_brightness(1);
+    hal_set_brightness(0);
     dimmed = true;
   } else if (napping && faceDownFrames <= -8) {
     napping = false;
