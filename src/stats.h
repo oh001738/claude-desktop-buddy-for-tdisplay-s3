@@ -184,9 +184,11 @@ struct Settings {
   bool hud;
   uint8_t clockRot;  // 0=auto 1=portrait 2=landscape
   uint8_t lang;      // 0=English, 1=繁體中文 (requires ZhTW12.vlw)
+  char wifiSsid[33];
+  char wifiPass[65];
 };
 
-static Settings _settings = { true, true, false, true, true, 0, 0 };
+static Settings _settings = { true, true, false, true, true, 0, 0, "", "" };
 
 inline void settingsLoad() {
   _prefs.begin("buddy", true);
@@ -199,6 +201,8 @@ inline void settingsLoad() {
   if (_settings.clockRot > 2) _settings.clockRot = 0;
   _settings.lang     = _prefs.getUChar("s_lang", 0);
   if (_settings.lang > 1) _settings.lang = 0;
+  _prefs.getString("s_wssid", _settings.wifiSsid, sizeof(_settings.wifiSsid));
+  _prefs.getString("s_wpass", _settings.wifiPass, sizeof(_settings.wifiPass));
   _prefs.end();
 }
 
@@ -211,6 +215,8 @@ inline void settingsSave() {
   _prefs.putBool("s_hud", _settings.hud);
   _prefs.putUChar("s_crot", _settings.clockRot);
   _prefs.putUChar("s_lang", _settings.lang);
+  _prefs.putString("s_wssid", _settings.wifiSsid);
+  _prefs.putString("s_wpass", _settings.wifiPass);
   _prefs.end();
 }
 

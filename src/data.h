@@ -75,6 +75,26 @@ inline bool dataRtcValid() { return _rtcValid; }
 static void _applyJson(const char* line, TamaState* out) {
   JsonDocument doc;
   if (deserializeJson(doc, line)) return;
+
+  const char* cmd = doc["cmd"];
+  if (cmd && strcmp(cmd, "wifi_config") == 0) {
+    const char* ssid = doc["ssid"];
+    const char* pass = doc["pass"];
+    if (ssid) {
+      strncpy(settings().wifiSsid, ssid, sizeof(settings().wifiSsid) - 1);
+      settings().wifiSsid[sizeof(settings().wifiSsid) - 1] = 0;
+      if (pass) {
+        strncpy(settings().wifiPass, pass, sizeof(settings().wifiPass) - 1);
+        settings().wifiPass[sizeof(settings().wifiPass) - 1] = 0;
+      } else {
+        settings().wifiPass[0] = 0;
+      }
+      settingsSave();
+    }
+    _lastLiveMs = millis();
+    return;
+  }
+
   if (xferCommand(doc)) { _lastLiveMs = millis(); return; }
 
   JsonArray t = doc["time"];

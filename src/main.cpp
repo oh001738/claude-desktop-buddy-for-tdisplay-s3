@@ -4,6 +4,7 @@
 #include "hal.h"
 #include <LittleFS.h>
 #include <stdarg.h>
+#include <WiFi.h>
 
 TFT_eSprite spr = TFT_eSprite(hal_get_lcd());
 TFT_eSprite petSpr = TFT_eSprite(hal_get_lcd());
@@ -226,14 +227,14 @@ bool settingsOpen = false;
 uint8_t settingsSel = 0;
 const char *settingsItems[]   = {
     "brightness", "sound",     "bluetooth", "wifi",  "led",
-    "transcript", "clock rot", "ascii pet", "reset", "language", "back"};
+    "transcript", "clock rot", "ascii pet", "reset", "language", "check update", "back"};
 const char *settingsItemsZh[] = {
     "亮度", "音效", "藍牙",  "Wi-Fi", "LED",
-    "字幕", "方向", "角色",  "重置",  "語言", "返回"};
-const uint8_t SETTINGS_N = 11;
+    "字幕", "方向", "角色",  "重置",  "語言", "檢查更新", "返回"};
+const uint8_t SETTINGS_N = 12;
 static bool isSettingVisible(uint8_t i) {
-  if (i == 1 || i == 3 || i == 4)
-    return false; // Hide sound, wifi and led
+  if (i == 1 || i == 4)
+    return false; // Hide sound and led, show wifi and check update
   if (i == 9 && !zhFontReady)
     return false; // language option requires CJK font
   return true;
@@ -273,7 +274,15 @@ static void applySetting(uint8_t idx) {
     break;
   case 3:
     s.wifi = !s.wifi;
-    break; // stored only — no WiFi stack linked
+    settingsSave();
+    if (s.wifi) {
+      extern void startWifiPortal();
+      startWifiPortal();
+    } else {
+      WiFi.disconnect(true);
+      WiFi.mode(WIFI_OFF);
+    }
+    break;
   case 4:
     s.led = !s.led;
     break;
@@ -299,6 +308,10 @@ static void applySetting(uint8_t idx) {
     }
     return;
   case 10:
+    extern void runOtaUpdate();
+    runOtaUpdate();
+    return;
+  case 11:
     settingsOpen = false;
     characterInvalidate();
     return;
@@ -427,6 +440,8 @@ static void drawSettingsValue(TFT_eSprite &dst, int i, int vx, int vy,
     bool v = (i == 2) ? s.bt : (i == 3 ? s.wifi : s.hud);
     dst.setTextColor(v ? GREEN : dimCol, bg);
     dst.print(v ? "on" : "off");
+  } else if (i == 10) {
+    dst.print(""); // check update option has no toggle value
   } else if (i == 6)
     dst.print(RN[s.clockRot]);
   else if (i == 7) {
@@ -2383,4 +2398,170 @@ void loop() {
   }
 
   delay(screenOff ? 100 : 16);
+}
+
+#include "ota.h"
+
+void drawWifiPortalScreen(const char* apName) {
+  const Palette &p = characterPalette();
+  auto lcd = hal_get_lcd();
+  
+  if (clockOrient == 0) {
+    // Portrait: draw using spr
+    spr.fillSprite(p.bg);
+    spr.drawRoundRect(10, 10, W - 20, H - 20, 8, p.textDim);
+    
+    spr.setTextSize(1);
+    spr.setTextColor(p.text, p.bg);
+    spr.setTextDatum(MC_DATUM);
+    spr.drawString("WI-FI SETUP", W / 2, 40);
+    spr.drawFastHLine(20, 55, W - 40, p.textDim);
+    
+    spr.setTextColor(p.textDim, p.bg);
+    spr.drawString("Connect to AP:", W / 2, 100);
+    
+    spr.setTextColor(p.text, p.bg);
+    spr.setTextSize(2);
+    spr.drawString(apName, W / 2, 130);
+    
+    spr.setTextSize(1);
+    spr.setTextColor(p.textDim, p.bg);
+    spr.drawString("on your phone/PC", W / 2, 160);
+    spr.drawString("to configure Wi-Fi", W / 2, 180);
+    
+    spr.setTextDatum(TL_DATUM);
+    lcd->setRotation(0);
+    spr.pushSprite(0, 0);
+  } else {
+    // Landscape: draw direct to LCD
+    lcd->setRotation(clockOrient);
+    lcd->fillScreen(p.bg);
+    
+    int sw = lcd->width();
+    int sh = lcd->height();
+    
+    lcd->drawRoundRect(10, 10, sw - 20, sh - 20, 8, p.textDim);
+    
+    lcd->setTextSize(2);
+    lcd->setTextColor(p.text, p.bg);
+    lcd->setTextDatum(MC_DATUM);
+    lcd->drawString("WI-FI SETUP", sw / 2, 40);
+    lcd->drawFastHLine(30, 60, sw - 60, p.textDim);
+    
+    lcd->setTextSize(1);
+    lcd->setTextColor(p.textDim, p.bg);
+    lcd->drawString("Connect to AP:", sw / 2, 85);
+    
+    lcd->setTextColor(p.text, p.bg);
+    lcd->setTextSize(2);
+    lcd->drawString(apName, sw / 2, 110);
+    
+    lcd->setTextSize(1);
+    lcd->setTextColor(p.textDim, p.bg);
+    lcd->drawString("to configure Wi-Fi settings", sw / 2, 140);
+    
+    lcd->setTextDatum(TL_DATUM);
+  }
+}
+
+void drawOtaProgress(const char* status, int progress) {
+  const Palette &p = characterPalette();
+  auto lcd = hal_get_lcd();
+  
+  if (clockOrient == 0) {
+    // Portrait: draw using spr
+    spr.fillSprite(p.bg);
+    spr.drawRoundRect(10, 10, W - 20, H - 20, 8, p.textDim);
+    
+    spr.setTextSize(1);
+    spr.setTextColor(p.text, p.bg);
+    spr.setTextDatum(MC_DATUM);
+    spr.drawString("SYSTEM UPDATE", W / 2, 40);
+    spr.drawFastHLine(20, 55, W - 40, p.textDim);
+    
+    // Status text
+    spr.setTextColor(p.textDim, p.bg);
+    spr.drawString(status, W / 2, 120);
+    
+    if (progress >= 0 && progress <= 100) {
+      // Progress bar
+      int barW = W - 40;
+      spr.drawRect(20, 160, barW, 12, p.textDim);
+      int fill = (barW - 2) * progress / 100;
+      if (fill > 0) {
+        spr.fillRect(21, 161, fill, 10, p.body);
+      }
+      
+      // Percent text
+      char pct[8];
+      snprintf(pct, sizeof(pct), "%d%%", progress);
+      spr.setTextColor(p.text, p.bg);
+      spr.drawString(pct, W / 2, 190);
+    }
+    
+    spr.setTextDatum(TL_DATUM);
+    lcd->setRotation(0);
+    spr.pushSprite(0, 0);
+  } else {
+    // Landscape: draw direct to LCD
+    lcd->setRotation(clockOrient);
+    lcd->fillScreen(p.bg);
+    
+    int sw = lcd->width();
+    int sh = lcd->height();
+    
+    lcd->drawRoundRect(10, 10, sw - 20, sh - 20, 8, p.textDim);
+    
+    lcd->setTextSize(2);
+    lcd->setTextColor(p.text, p.bg);
+    lcd->setTextDatum(MC_DATUM);
+    lcd->drawString("SYSTEM UPDATE", sw / 2, 40);
+    lcd->drawFastHLine(30, 60, sw - 60, p.textDim);
+    
+    // Status text
+    lcd->setTextSize(1);
+    lcd->setTextColor(p.textDim, p.bg);
+    lcd->drawString(status, sw / 2, 90);
+    
+    if (progress >= 0 && progress <= 100) {
+      // Progress bar
+      int barW = sw - 80;
+      lcd->drawRect(40, 115, barW, 14, p.textDim);
+      int fill = (barW - 2) * progress / 100;
+      if (fill > 0) {
+        lcd->fillRect(41, 116, fill, 12, p.body);
+      }
+      
+      // Percent text
+      char pct[8];
+      snprintf(pct, sizeof(pct), "%d%%", progress);
+      lcd->setTextColor(p.text, p.bg);
+      lcd->drawString(pct, sw / 2, 145);
+    }
+    
+    lcd->setTextDatum(TL_DATUM);
+  }
+}
+
+static void otaProgressCallback(const char* status, int progress) {
+  drawOtaProgress(status, progress);
+  yield(); // feed WDT
+}
+
+void runOtaUpdate() {
+  menuOpen = settingsOpen = resetOpen = false; // Close menu during update
+  char errBuf[128] = "";
+  
+  bool ok = otaUpdateFlow(otaProgressCallback, errBuf, sizeof(errBuf));
+  
+  if (!ok) {
+    drawOtaProgress(errBuf, -1);
+    beep(600, 500); 
+    delay(4000);
+    
+    // Go back to settings menu
+    settingsOpen = true;
+    menuDirty = true;
+    characterInvalidate();
+  }
 }
