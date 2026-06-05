@@ -7,7 +7,7 @@
 #include <WiFiClientSecure.h>
 #include <WiFiManager.h>
 
-const char* CURRENT_VERSION = "v1.0.9";
+const char* CURRENT_VERSION = "v1.1.0";
 const char* GITHUB_API_URL = "https://api.github.com/repos/oh001738/claude-desktop-buddy-for-tdisplay-s3/releases/latest";
 
 static void (*_progCb)(const char* status, int progress) = nullptr;

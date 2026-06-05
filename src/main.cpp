@@ -322,7 +322,9 @@ static void applySetting(uint8_t idx) {
     return;
   case 11:
     settingsOpen = false;
-    characterInvalidate();
+    menuOpen = true;
+    menuSel = 0; // Highlight the 'settings' option in main menu
+    menuInvalidate();
     return;
   }
   settingsSave();
@@ -1153,6 +1155,8 @@ void drawInfo() {
       gridLn(1, 2, "UPTIME", upBuf);
       gridLn(0, 3, "MOOD", stateNames[activeState]);
       gridLn(1, 3, "BT NAME", btName);
+      extern const char* CURRENT_VERSION;
+      gridLn(0, 4, "FIRMWARE", CURRENT_VERSION);
 
     } else if (infoPage == 1) {
       // 2. Buttons Guide
@@ -1967,35 +1971,169 @@ void setup() {
   clockUpdateOrient(); // Load saved orientation
 
   {
-    const Palette &p = characterPalette();
     auto lcd = hal_get_lcd();
     lcd->setRotation(clockOrient);
-    lcd->fillScreen(p.bg);
-    applyBrightness(); // 燈在這時候才點亮，此時畫面已經是乾淨的了
-
-    // Use LCD dimensions for centering
+    
+    // Cyberpunk Neon Boot Animation
     int sw = lcd->width();
     int sh = lcd->height();
-
-    lcd->setTextDatum(MC_DATUM);
-    lcd->setTextSize(2);
-    if (ownerName()[0]) {
-      char line[40];
-      snprintf(line, sizeof(line), "%s's", ownerName());
-      lcd->setTextColor(p.text, p.bg);
-      lcd->drawString(line, sw / 2, sh / 2 - 12);
-      lcd->setTextColor(p.body, p.bg);
-      lcd->drawString(petName(), sw / 2, sh / 2 + 12);
-    } else {
-      lcd->setTextColor(p.body, p.bg);
-      lcd->drawString("Hello!", sw / 2, sh / 2 - 12);
-      lcd->setTextSize(1);
-      lcd->setTextColor(p.textDim, p.bg);
-      lcd->drawString("a buddy appears", sw / 2, sh / 2 + 12);
+    
+    TFT_eSprite bootSpr(lcd);
+    if (bootSpr.createSprite(sw, sh)) {
+      bootSpr.setSwapBytes(true);
+      
+      // Keep backlight off until the first frame is ready to avoid screen flash
+      bool backlightOn = false;
+      
+      uint32_t startMs = millis();
+      const uint32_t dur = 4000; // 4 seconds animation
+      
+      while (millis() - startMs < dur) {
+        uint32_t elapsed = millis() - startMs;
+        
+        // 1. Draw solid dark purple background
+        bootSpr.fillSprite(lcd->color565(5, 2, 12));
+        
+        // 2. Background Grid lines (20px spacing)
+        if (elapsed > 200) {
+          uint16_t gridColor = lcd->color565(45, 10, 26);
+          for (int x = 0; x <= sw; x += 20) {
+            bootSpr.drawFastVLine(x, 0, sh, gridColor);
+          }
+          for (int y = 0; y <= sh; y += 20) {
+            bootSpr.drawFastHLine(0, y, sw, gridColor);
+          }
+        }
+        
+        // 3. Corner brackets (appear at 500ms, solid magenta, no alpha)
+        if (elapsed > 500) {
+          uint16_t bracketColor = lcd->color565(255, 0, 127);
+          int m = 8, len = 15;
+          // Top-Left
+          bootSpr.drawFastHLine(m, m, len, bracketColor);
+          bootSpr.drawFastVLine(m, m, len, bracketColor);
+          // Top-Right
+          bootSpr.drawFastHLine(sw - m - len, m, len, bracketColor);
+          bootSpr.drawFastVLine(sw - m, m, len, bracketColor);
+          // Bottom-Left
+          bootSpr.drawFastHLine(m, sh - m, len, bracketColor);
+          bootSpr.drawFastVLine(m, sh - m - len, len, bracketColor);
+          // Bottom-Right
+          bootSpr.drawFastHLine(sw - m - len, sh - m, len, bracketColor);
+          bootSpr.drawFastVLine(sw - m, sh - m - len, len, bracketColor);
+        }
+        
+        // 4. Moving Scan beam (between 300ms and 2000ms)
+        if (elapsed > 300 && elapsed < 2000) {
+          float beamProgress = (float)(elapsed - 300) / 1700.0f;
+          int beamY = (int)(beamProgress * sh);
+          bootSpr.drawFastHLine(0, beamY, sw, lcd->color565(255, 0, 127));
+          if (beamY < sh - 1) {
+            bootSpr.drawFastHLine(0, beamY + 1, sw, lcd->color565(255, 0, 127));
+          }
+        }
+        
+        // 5. Title Text & Glow shadow (appears at 800ms)
+        if (elapsed > 800) {
+          bootSpr.setTextDatum(MC_DATUM);
+          int x = sw / 2;
+          
+          // Glitch flicker (simulate random coordinates offsets and channel lines)
+          if ((elapsed > 1000 && elapsed < 1100) || (elapsed > 2200 && elapsed < 2250)) {
+            x += (random(100) > 50 ? 4 : -4);
+            bootSpr.fillRect(x - 50, sh / 2 - 10, 100, 2, TFT_CYAN);
+          }
+          
+          uint16_t glowColor = lcd->color565(187, 0, 85);
+          uint16_t fgColor = TFT_WHITE;
+          uint16_t subColor = TFT_CYAN;
+          
+          if (sw < 200) {
+            // PORTRAIT LAYOUT
+            int y1 = sh / 2 - 35;
+            int y2 = sh / 2 - 10;
+            int y3 = sh / 2 + 15;
+            
+            // "CLAUDE" shadow glow + foreground
+            bootSpr.setTextColor(glowColor);
+            bootSpr.drawString("CLAUDE", x - 1, y1, 4);
+            bootSpr.drawString("CLAUDE", x + 1, y1, 4);
+            bootSpr.drawString("CLAUDE", x, y1 - 1, 4);
+            bootSpr.drawString("CLAUDE", x, y1 + 1, 4);
+            bootSpr.setTextColor(fgColor);
+            bootSpr.drawString("CLAUDE", x, y1, 4);
+            
+            // "BUDDY" shadow glow + foreground
+            bootSpr.setTextColor(glowColor);
+            bootSpr.drawString("BUDDY", x - 1, y2, 4);
+            bootSpr.drawString("BUDDY", x + 1, y2, 4);
+            bootSpr.drawString("BUDDY", x, y2 - 1, 4);
+            bootSpr.drawString("BUDDY", x, y2 + 1, 4);
+            bootSpr.setTextColor(fgColor);
+            bootSpr.drawString("BUDDY", x, y2, 4);
+            
+            // Subtitle
+            bootSpr.setTextColor(subColor);
+            bootSpr.drawString("S3 EDITION", x, y3, 2);
+          } else {
+            // LANDSCAPE LAYOUT
+            int y1 = sh / 2 - 18;
+            int y2 = sh / 2 + 10;
+            
+            // "CLAUDE BUDDY" shadow glow + foreground
+            bootSpr.setTextColor(glowColor);
+            bootSpr.drawString("CLAUDE BUDDY", x - 1, y1, 4);
+            bootSpr.drawString("CLAUDE BUDDY", x + 1, y1, 4);
+            bootSpr.drawString("CLAUDE BUDDY", x, y1 - 1, 4);
+            bootSpr.drawString("CLAUDE BUDDY", x, y1 + 1, 4);
+            bootSpr.setTextColor(fgColor);
+            bootSpr.drawString("CLAUDE BUDDY", x, y1, 4);
+            
+            // Subtitle
+            bootSpr.setTextColor(subColor);
+            bootSpr.drawString("S3 EDITION", x, y2, 2);
+          }
+        }
+        
+        // 6. Version and Divider (appears at 1500ms)
+        if (elapsed > 1500) {
+          int divY = (sw < 200) ? (sh / 2 + 38) : (sh / 2 + 22);
+          int verY = (sw < 200) ? (sh / 2 + 50) : (sh / 2 + 36);
+          
+          bootSpr.drawFastHLine(sw / 2 - 50, divY, 100, lcd->color565(68, 0, 34));
+          bootSpr.setTextColor(lcd->color565(255, 0, 127));
+          bootSpr.drawString("v1.1.0", sw / 2, verY, 2);
+        }
+        
+        // 7. Scan line filter (CRT simulation) - drawn on top of everything
+        for (int y = 1; y < sh; y += 2) {
+          bootSpr.drawFastHLine(0, y, sw, TFT_BLACK);
+        }
+        
+        // Push double-buffered frame to LCD
+        bootSpr.pushSprite(0, 0);
+        
+        // Turn on screen backlight PWM on the very first frame to prevent startup flash
+        if (!backlightOn) {
+          applyBrightness();
+          backlightOn = true;
+        }
+        
+        // Check for skip click (any button instantly skips)
+        hal_loop();
+        if (hal_btn_a_clicked() || hal_btn_b_clicked()) {
+          Serial.println("[SYSTEM] Boot animation skipped by user.");
+          break;
+        }
+        
+        delay(16);
+      }
+      bootSpr.deleteSprite();
     }
+    
+    // Restore default settings
     lcd->setTextDatum(TL_DATUM);
     lcd->setTextSize(1);
-    delay(800);          // Slightly longer for easier reading
     lcd->setRotation(0); // Reset for main sprite path
   }
 
@@ -2590,8 +2728,9 @@ void runOtaUpdate() {
     beep(600, 500); 
     delay(4000);
     
-    // Go back to settings menu
-    settingsOpen = true;
+    // Return to main screen
+    menuOpen = false;
+    settingsOpen = false;
     menuDirty = true;
     characterInvalidate();
   }
