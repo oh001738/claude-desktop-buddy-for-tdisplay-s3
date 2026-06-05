@@ -7,7 +7,7 @@
 #include <WiFiClientSecure.h>
 #include <WiFiManager.h>
 
-const char* CURRENT_VERSION = "v1.0.3";
+const char* CURRENT_VERSION = "v1.0.4";
 const char* GITHUB_API_URL = "https://api.github.com/repos/oh001738/claude-desktop-buddy-for-tdisplay-s3/releases/latest";
 
 static void (*_progCb)(const char* status, int progress) = nullptr;
@@ -58,19 +58,21 @@ bool otaUpdateFlow(void (*progressCallback)(const char* status, int progress), c
     _progCb = progressCallback;
     errBuf[0] = 0;
 
+    progressCallback("Connecting Wi-Fi", 0);
+    
+    // Turn on WiFi station mode so we can read the stored SSID
+    WiFi.mode(WIFI_STA);
+    delay(100);
+
     // Check if WiFi settings are stored in SDK
     String storedSsid = WiFi.SSID();
     if (storedSsid.length() == 0) {
         snprintf(errBuf, errBufLen, "Wi-Fi not configured. Go to menu and turn Wi-Fi ON.");
+        WiFi.mode(WIFI_OFF);
         return false;
     }
 
-    progressCallback("Connecting Wi-Fi", 0);
-    
     // Begin connection using saved credentials in SDK
-    WiFi.disconnect(true);
-    delay(200);
-    WiFi.mode(WIFI_STA);
     WiFi.begin();
 
     uint32_t startMs = millis();
