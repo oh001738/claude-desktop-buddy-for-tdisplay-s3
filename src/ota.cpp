@@ -88,14 +88,14 @@ bool otaUpdateFlow(void (*progressCallback)(const char* status, int progress), c
 
     progressCallback("Checking updates", 0);
 
-    WiFiClientSecure client;
-    client.setInsecure(); // Bypass GitHub root cert validation for permanent compatibility
+    WiFiClientSecure apiClient;
+    apiClient.setInsecure(); // Bypass GitHub root cert validation for permanent compatibility
     
     HTTPClient http;
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     
     // GitHub API requires User-Agent
-    if (!http.begin(client, GITHUB_API_URL)) {
+    if (!http.begin(apiClient, GITHUB_API_URL)) {
         snprintf(errBuf, errBufLen, "Failed to connect to GitHub API");
         WiFi.disconnect(true);
         return false;
@@ -157,12 +157,64 @@ bool otaUpdateFlow(void (*progressCallback)(const char* status, int progress), c
         return false;
     }
 
+    progressCallback("Debugging OTA", 0);
+    // DEBUG: Test downloadUrl and fill errBuf with details if it's not a valid binary
+    {
+        WiFiClientSecure testClient;
+        testClient.setInsecure();
+        HTTPClient testHttp;
+        testHttp.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+        if (!testHttp.begin(testClient, downloadUrl)) {
+            snprintf(errBuf, errBufLen, "DBG: testHttp begin fail");
+            WiFi.disconnect(true);
+            return false;
+        }
+        testHttp.addHeader("User-Agent", "ESP32-OTA-Client");
+        int code = testHttp.GET();
+        if (code != 200) {
+            snprintf(errBuf, errBufLen, "DBG HTTP: %d", code);
+            testHttp.end();
+            WiFi.disconnect(true);
+            return false;
+        }
+        
+        WiFiClient* stream = testHttp.getStreamPtr();
+        uint8_t buf[16] = {0};
+        uint32_t t = millis();
+        while (stream->available() < 16 && millis() - t < 3000) {
+            delay(10);
+        }
+        int r = stream->readBytes(buf, 16);
+        if (r < 16) {
+            snprintf(errBuf, errBufLen, "DBG Read: %d B", r);
+            testHttp.end();
+            WiFi.disconnect(true);
+            return false;
+        }
+        
+        if (buf[0] != 0xE9) {
+            buf[15] = 0; // null terminate
+            // Clean up non-printable chars
+            for (int i = 0; i < 15; i++) {
+                if (buf[i] < 32 || buf[i] > 126) buf[i] = '.';
+            }
+            snprintf(errBuf, errBufLen, "Not bin: %02X %02X / %s", 
+                     buf[0], buf[1], (char*)buf);
+            testHttp.end();
+            WiFi.disconnect(true);
+            return false;
+        }
+        testHttp.end();
+    }
+
     progressCallback("Downloading", 0);
     httpUpdate.onProgress(update_progress);
     httpUpdate.rebootOnUpdate(true);
     httpUpdate.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
 
-    t_httpUpdate_return ret = httpUpdate.update(client, downloadUrl);
+    WiFiClientSecure updateClient;
+    updateClient.setInsecure();
+    t_httpUpdate_return ret = httpUpdate.update(updateClient, downloadUrl);
 
     if (ret == HTTP_UPDATE_FAILED) {
         snprintf(errBuf, errBufLen, "OTA fail: (%d) %s", 
