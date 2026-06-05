@@ -218,10 +218,10 @@ static void applyDisplayMode() {
 }
 
 const char *menuItems[]   = {"settings", "turn off", "help",
-                             "about",    "demo",     "close"};
+                             "about",    "demo",     "update", "close"};
 const char *menuItemsZh[] = {"設定", "關機", "說明",
-                             "關於", "示範", "關閉"};
-const uint8_t MENU_N = 6;
+                             "關於", "示範", "更新",   "關閉"};
+const uint8_t MENU_N = 7;
 
 bool settingsOpen = false;
 uint8_t settingsSel = 0;
@@ -233,8 +233,8 @@ const char *settingsItemsZh[] = {
     "字幕", "方向", "角色",  "重置",  "語言", "檢查更新", "返回"};
 const uint8_t SETTINGS_N = 12;
 static bool isSettingVisible(uint8_t i) {
-  if (i == 1 || i == 4)
-    return false; // Hide sound and led, show wifi and check update
+  if (i == 1 || i == 4 || i == 10)
+    return false; // Hide sound, led, and check update (update is now in main menu)
   if (i == 9 && !zhFontReady)
     return false; // language option requires CJK font
   return true;
@@ -277,7 +277,16 @@ static void applySetting(uint8_t idx) {
     settingsSave();
     if (s.wifi) {
       extern void startWifiPortal();
-      startWifiPortal();
+      // Only launch config portal if no credentials stored in NVS;
+      // otherwise just enable the radio directly.
+      WiFi.mode(WIFI_STA);
+      WiFi.begin();
+      delay(300);
+      if (WiFi.SSID().length() == 0) {
+        // No saved network — launch portal to configure one
+        startWifiPortal();
+      }
+      // If credentials exist, radio is now on and will connect in background
     } else {
       WiFi.disconnect(true);
       WiFi.mode(WIFI_OFF);
@@ -639,7 +648,14 @@ void menuConfirm() {
   case 4:
     dataSetDemo(!dataDemo());
     break;
-  case 5:
+  case 5: {
+    // Check for Updates — no manual Wi-Fi toggle needed, OTA handles it
+    extern void runOtaUpdate();
+    menuOpen = false;
+    runOtaUpdate();
+    break;
+  }
+  case 6:
     menuOpen = false;
     characterInvalidate();
     break;

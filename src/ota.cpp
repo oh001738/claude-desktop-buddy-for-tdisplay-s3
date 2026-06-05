@@ -7,7 +7,7 @@
 #include <WiFiClientSecure.h>
 #include <WiFiManager.h>
 
-const char* CURRENT_VERSION = "v1.0.8";
+const char* CURRENT_VERSION = "v1.0.9";
 const char* GITHUB_API_URL = "https://api.github.com/repos/oh001738/claude-desktop-buddy-for-tdisplay-s3/releases/latest";
 
 static void (*_progCb)(const char* status, int progress) = nullptr;
@@ -77,11 +77,16 @@ bool otaUpdateFlow(void (*progressCallback)(const char* status, int progress), c
     WiFi.mode(WIFI_STA);
     WiFi.begin();
     
-    // Wait for the SDK to load and start the connection process
-    delay(200);
+    // Poll until NVS credentials are loaded (up to 1 second, 50ms steps)
+    // WiFi.begin() triggers an async NVS read; a fixed delay can be too short
+    String storedSsid = "";
+    uint32_t ssidWaitStart = millis();
+    while (millis() - ssidWaitStart < 1000) {
+        storedSsid = WiFi.SSID();
+        if (storedSsid.length() > 0) break;
+        delay(50);
+    }
 
-    // Now WiFi.SSID() will return the SSID we are trying to connect to
-    String storedSsid = WiFi.SSID();
     if (storedSsid.length() == 0) {
         snprintf(errBuf, errBufLen, "Wi-Fi not configured. Go to menu and turn Wi-Fi ON.");
         // Don't persist wifi=false here — the user hasn't configured it yet
