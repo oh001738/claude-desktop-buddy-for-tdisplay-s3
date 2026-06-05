@@ -126,7 +126,7 @@ void hal_beep(uint16_t freq, uint16_t dur) {
 
 void hal_get_time(int& h, int& m, int& s) {
     struct tm timeinfo;
-    if(!getLocalTime(&timeinfo)){
+    if(!getLocalTime(&timeinfo, 0)){
         h=m=s=0;
         return;
     }
@@ -137,7 +137,7 @@ void hal_get_time(int& h, int& m, int& s) {
 
 void hal_get_date(int& y, int& mon, int& d, int& dow) {
     struct tm timeinfo;
-    if(!getLocalTime(&timeinfo)){
+    if(!getLocalTime(&timeinfo, 0)){
         y=2024; mon=1; d=1; dow=0;
         return;
     }
