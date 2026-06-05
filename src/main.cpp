@@ -2503,24 +2503,39 @@ void drawOtaProgress(const char* status, int progress) {
     lcd->setRotation(0);
     spr.pushSprite(0, 0);
   } else {
-    // Landscape: draw direct to LCD
-    lcd->setRotation(clockOrient);
-    lcd->fillScreen(p.bg);
-    
+    // Landscape: draw direct to LCD with partial clearing to avoid flickering
     int sw = lcd->width();
     int sh = lcd->height();
     
-    lcd->drawRoundRect(10, 10, sw - 20, sh - 20, 8, p.textDim);
+    static int lastOrient = -1;
+    static bool firstFrame = true;
+    if (progress <= 0) { // Reset on start (0) or error (-1)
+      firstFrame = true;
+    }
     
-    lcd->setTextSize(2);
-    lcd->setTextColor(p.text, p.bg);
-    lcd->setTextDatum(MC_DATUM);
-    lcd->drawString("SYSTEM UPDATE", sw / 2, 40);
-    lcd->drawFastHLine(30, 60, sw - 60, p.textDim);
+    bool redrawStatic = (clockOrient != lastOrient) || firstFrame;
+    lastOrient = clockOrient;
+    firstFrame = false;
+    
+    if (redrawStatic) {
+      lcd->setRotation(clockOrient);
+      lcd->fillScreen(p.bg);
+      lcd->drawRoundRect(10, 10, sw - 20, sh - 20, 8, p.textDim);
+      
+      lcd->setTextSize(2);
+      lcd->setTextColor(p.text, p.bg);
+      lcd->setTextDatum(MC_DATUM);
+      lcd->drawString("SYSTEM UPDATE", sw / 2, 40);
+      lcd->drawFastHLine(30, 60, sw - 60, p.textDim);
+    } else {
+      // Clear the dynamic text & progress bar area only
+      lcd->fillRect(12, 70, sw - 24, 90, p.bg);
+    }
     
     // Status text
     lcd->setTextSize(1);
     lcd->setTextColor(p.textDim, p.bg);
+    lcd->setTextDatum(MC_DATUM);
     lcd->drawString(status, sw / 2, 90);
     
     if (progress >= 0 && progress <= 100) {

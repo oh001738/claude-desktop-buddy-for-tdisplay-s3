@@ -7,18 +7,22 @@
 #include <WiFiClientSecure.h>
 #include <WiFiManager.h>
 
-const char* CURRENT_VERSION = "v1.0.4";
+const char* CURRENT_VERSION = "v1.0.5";
 const char* GITHUB_API_URL = "https://api.github.com/repos/oh001738/claude-desktop-buddy-for-tdisplay-s3/releases/latest";
 
 static void (*_progCb)(const char* status, int progress) = nullptr;
 extern void drawWifiPortalScreen(const char* apName);
 
+static int last_pct = -1;
 static void update_progress(int cur, int total) {
     if (_progCb && total > 0) {
         int pct = (int)(((int64_t)cur * 100) / total);
         if (pct < 0) pct = 0;
         if (pct > 100) pct = 100;
-        _progCb("Downloading", pct);
+        if (pct != last_pct) {
+            last_pct = pct;
+            _progCb("Downloading", pct);
+        }
     }
 }
 
@@ -57,23 +61,25 @@ void startWifiPortal() {
 bool otaUpdateFlow(void (*progressCallback)(const char* status, int progress), char* errBuf, size_t errBufLen) {
     _progCb = progressCallback;
     errBuf[0] = 0;
+    last_pct = -1;
 
     progressCallback("Connecting Wi-Fi", 0);
     
-    // Turn on WiFi station mode so we can read the stored SSID
+    // Initialize WiFi and begin connection to last saved network
     WiFi.mode(WIFI_STA);
-    delay(100);
+    WiFi.begin();
+    
+    // Wait for the SDK to load and start the connection process
+    delay(200);
 
-    // Check if WiFi settings are stored in SDK
+    // Now WiFi.SSID() will return the SSID we are trying to connect to
     String storedSsid = WiFi.SSID();
     if (storedSsid.length() == 0) {
         snprintf(errBuf, errBufLen, "Wi-Fi not configured. Go to menu and turn Wi-Fi ON.");
+        WiFi.disconnect(true);
         WiFi.mode(WIFI_OFF);
         return false;
     }
-
-    // Begin connection using saved credentials in SDK
-    WiFi.begin();
 
     uint32_t startMs = millis();
     while (WiFi.status() != WL_CONNECTED) {
