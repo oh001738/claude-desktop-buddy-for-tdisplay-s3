@@ -199,11 +199,11 @@ static void applyDisplayMode() {
   characterInvalidate(); // redraws character on next tick (text mode path)
 }
 
-const char *menuItems[]   = {"settings", "turn off", "help",
-                             "about",    "demo",     "update", "close"};
-const char *menuItemsZh[] = {"設定", "關機", "說明",
-                             "關於", "示範", "更新",   "關閉"};
-const uint8_t MENU_N = 7;
+const char *menuItems[]   = {"settings", "turn off", "about",
+                             "demo",     "update", "close"};
+const char *menuItemsZh[] = {"設定", "關機", "關於",
+                             "示範", "更新",   "關閉"};
+const uint8_t MENU_N = 6;
 
 bool settingsOpen = false;
 uint8_t settingsSel = 0;
@@ -633,24 +633,23 @@ void menuConfirm() {
     hal_power_off();
     break;
   case 2:
-  case 3:
     menuOpen = false;
     displayMode = DISP_INFO;
-    infoPage = (menuSel == 2) ? INFO_PG_BUTTONS : INFO_PG_CREDITS;
+    infoPage = 0;
     applyDisplayMode();
     characterInvalidate();
     break;
-  case 4:
+  case 3:
     dataSetDemo(!dataDemo());
     break;
-  case 5: {
+  case 4: {
     // Check for Updates — no manual Wi-Fi toggle needed, OTA handles it
     extern void runOtaUpdate();
     menuOpen = false;
     runOtaUpdate();
     break;
   }
-  case 6:
+  case 5:
     menuOpen = false;
     characterInvalidate();
     break;
@@ -2095,7 +2094,7 @@ void setup() {
           
           bootSpr.drawFastHLine(sw / 2 - 50, divY, 100, lcd->color565(68, 0, 34));
           bootSpr.setTextColor(lcd->color565(255, 0, 127));
-          bootSpr.drawString("v1.1.2", sw / 2, verY, 2);
+          bootSpr.drawString("v1.1.3", sw / 2, verY, 2);
         }
         
         // 7. Scan line filter (CRT simulation) - drawn on top of everything
