@@ -96,10 +96,8 @@ TFT_eSPI* hal_get_lcd() { return &tft; }
 
 void hal_set_brightness(uint8_t level) {
     // level: 1..4. Map to 100..255 PWM.
-    // level 0 is used for napping/extra dim (PWM = 4).
     uint8_t pwm = 255;
-    if (level == 0) pwm = 4;
-    else if (level == 1) pwm = 100;
+    if (level <= 1) pwm = 100;
     else if (level == 2) pwm = 150;
     else if (level == 3) pwm = 200;
     else pwm = 255;

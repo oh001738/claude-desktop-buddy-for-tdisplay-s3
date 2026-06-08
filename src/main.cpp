@@ -13,6 +13,7 @@ TFT_eSprite txtSpr = TFT_eSprite(hal_get_lcd());
 // Created and font-loaded only if /ZhTW12.vlw exists in LittleFS.
 TFT_eSprite zhSpr = TFT_eSprite(hal_get_lcd());
 static bool zhFontReady = false;
+bool g_rtcValid = false;
 
 // Transcript-active hold: when a new transcript line arrives, we keep the
 // transcript visible (covering the portrait clock area) for this many ms
@@ -290,6 +291,7 @@ static void applySetting(uint8_t idx) {
     resetOpen = true;
     resetSel = 0;
     resetConfirmIdx = 0xFF;
+    settingsOpen = false;
     return;
   case 9:
     if (zhFontReady) {
@@ -310,6 +312,37 @@ static void applySetting(uint8_t idx) {
   }
   settingsSave();
 }
+static void deleteNonBufoCharacters() {
+  fs::File d = LittleFS.open("/characters");
+  if (!d || !d.isDirectory()) return;
+
+  fs::File e;
+  while ((e = d.openNextFile())) {
+    const char* name = e.name();
+    if (strcmp(name, "bufo") == 0) {
+      e.close();
+      continue;
+    }
+    
+    char path[128];
+    snprintf(path, sizeof(path), "/characters/%s", name);
+    if (e.isDirectory()) {
+      fs::File f;
+      while ((f = e.openNextFile())) {
+        char fp[192];
+        snprintf(fp, sizeof(fp), "%s/%s", path, f.name());
+        f.close();
+        LittleFS.remove(fp);
+      }
+      e.close();
+      LittleFS.rmdir(path);
+    } else {
+      e.close();
+      LittleFS.remove(path);
+    }
+  }
+  d.close();
+}
 
 // Tap-twice confirm: first tap arms (label flips to "really?"), second
 // within 3s executes. Scrolling away clears the arm.
@@ -320,6 +353,7 @@ static void applyReset(uint8_t idx) {
 
   if (idx == 2) {
     resetOpen = false;
+    settingsOpen = true;
     return;
   }
 
@@ -332,38 +366,16 @@ static void applyReset(uint8_t idx) {
 
   beep(800, 200);
   if (idx == 0) {
-    // delete char: wipe /characters/, reboot into ASCII mode
-    fs::File d = LittleFS.open("/characters");
-    if (d && d.isDirectory()) {
-      fs::File e;
-      while ((e = d.openNextFile())) {
-        char path[80];
-        snprintf(path, sizeof(path), "/characters/%s", e.name());
-        if (e.isDirectory()) {
-          fs::File f;
-          while ((f = e.openNextFile())) {
-            char fp[128];
-            snprintf(fp, sizeof(fp), "%s/%s", path, f.name());
-            f.close();
-            LittleFS.remove(fp);
-          }
-          e.close();
-          LittleFS.rmdir(path);
-        } else {
-          e.close();
-          LittleFS.remove(path);
-        }
-      }
-      d.close();
-    }
+    // delete char: wipe non-bufo characters, keep bufo
+    deleteNonBufoCharacters();
   } else {
-    // factory reset: NVS namespace wipe + filesystem format + BLE bonds.
-    // Clears stats, owner, petname, species, settings, GIF characters,
-    // and any stored LTKs so the next desktop has to re-pair.
+    // factory reset: NVS namespace wipe + delete non-bufo characters + BLE bonds.
+    // Clears stats, owner, petname, species, settings, and any stored LTKs
+    // so the next desktop has to re-pair.
     _prefs.begin("buddy", false);
     _prefs.clear();
     _prefs.end();
-    LittleFS.format();
+    deleteNonBufoCharacters();
     bleClearBonds();
   }
   delay(300);
@@ -2083,7 +2095,7 @@ void setup() {
           
           bootSpr.drawFastHLine(sw / 2 - 50, divY, 100, lcd->color565(68, 0, 34));
           bootSpr.setTextColor(lcd->color565(255, 0, 127));
-          bootSpr.drawString("v1.1.1", sw / 2, verY, 2);
+          bootSpr.drawString("v1.1.2", sw / 2, verY, 2);
         }
         
         // 7. Scan line filter (CRT simulation) - drawn on top of everything
@@ -2513,7 +2525,7 @@ void loop() {
   if (!napping && faceDownFrames >= 15) {
     napping = true;
     napStartMs = now;
-    hal_set_brightness(0);
+    hal_screen_off();
     dimmed = true;
   } else if (napping && faceDownFrames <= -8) {
     napping = false;
