@@ -1544,16 +1544,16 @@ static void drawApproval() {
       txtSpr.drawString("sent...", 40, 152, 2);
     } else if (clockOrient == 1) {
       // Buttons on LEFT: BOOT(A)=top, IO14(B)=bottom
-      txtSpr.setTextColor(GREEN, p.bg);
-      txtSpr.drawString("^ A: approve", 5, 143, 1);
       txtSpr.setTextColor(HOT, p.bg);
-      txtSpr.drawString("v B: deny",    5, 157, 1);
+      txtSpr.drawString("^ A: deny",    5, 143, 1);
+      txtSpr.setTextColor(GREEN, p.bg);
+      txtSpr.drawString("v B: approve", 5, 157, 1);
     } else {
       // clockOrient==3, buttons on RIGHT: IO14(B)=top, BOOT(A)=bottom
-      txtSpr.setTextColor(HOT, p.bg);
-      txtSpr.drawString("^ B: deny",    5, 143, 1);
       txtSpr.setTextColor(GREEN, p.bg);
-      txtSpr.drawString("v A: approve", 5, 157, 1);
+      txtSpr.drawString("^ B: approve", 5, 143, 1);
+      txtSpr.setTextColor(HOT, p.bg);
+      txtSpr.drawString("v A: deny",    5, 157, 1);
     }
 
     txtSpr.pushSprite(170, 0);
@@ -1594,12 +1594,12 @@ static void drawApproval() {
     spr.print("sent...");
   } else {
     // Buttons at bottom: BOOT(A)=left, IO14(B)=right
-    spr.setTextColor(GREEN, p.bg);
-    spr.setCursor(4, H - 12);
-    spr.print("A< approve");
     spr.setTextColor(HOT, p.bg);
-    spr.setCursor(W - 52, H - 12);
-    spr.print("deny >B");
+    spr.setCursor(4, H - 12);
+    spr.print("A< deny");
+    spr.setTextColor(GREEN, p.bg);
+    spr.setCursor(W - 60, H - 12);
+    spr.print("approve >B");
   }
 }
 
@@ -2102,7 +2102,7 @@ void setup() {
           
           bootSpr.drawFastHLine(sw / 2 - 50, divY, 100, lcd->color565(68, 0, 34));
           bootSpr.setTextColor(lcd->color565(255, 0, 127));
-          bootSpr.drawString("v1.1.4", sw / 2, verY, 2);
+          bootSpr.drawString("v1.1.5", sw / 2, verY, 2);
         }
         
         // 7. Scan line filter (CRT simulation) - drawn on top of everything
