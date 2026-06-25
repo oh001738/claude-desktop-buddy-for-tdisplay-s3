@@ -2263,15 +2263,12 @@ void loop() {
       } else if (inPrompt) {
         char cmd[96];
         snprintf(cmd, sizeof(cmd),
-                 "{\"cmd\":\"permission\",\"id\":\"%s\",\"decision\":\"once\"}",
+                 "{\"cmd\":\"permission\",\"id\":\"%s\",\"decision\":\"deny\"}",
                  tama.promptId);
         sendCmd(cmd);
         responseSent = true;
-        uint32_t tookS = (millis() - promptArrivedMs) / 1000;
-        statsOnApproval(tookS);
-        beep(2400, 60);
-        if (tookS < 5)
-          triggerOneShot(P_HEART, 2000);
+        statsOnDenial();
+        beep(600, 60);
       } else if (resetOpen) {
         beep(1800, 30);
         resetSel = (resetSel + 1) % RESET_N;
@@ -2307,12 +2304,15 @@ void loop() {
     } else if (inPrompt) {
       char cmd[96];
       snprintf(cmd, sizeof(cmd),
-               "{\"cmd\":\"permission\",\"id\":\"%s\",\"decision\":\"deny\"}",
+               "{\"cmd\":\"permission\",\"id\":\"%s\",\"decision\":\"once\"}",
                tama.promptId);
       sendCmd(cmd);
       responseSent = true;
-      statsOnDenial();
-      beep(600, 60);
+      uint32_t tookS = (millis() - promptArrivedMs) / 1000;
+      statsOnApproval(tookS);
+      beep(2400, 60);
+      if (tookS < 5)
+        triggerOneShot(P_HEART, 2000);
     } else if (resetOpen) {
       beep(2400, 30);
       applyReset(resetSel);
