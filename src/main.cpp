@@ -2102,7 +2102,7 @@ void setup() {
           
           bootSpr.drawFastHLine(sw / 2 - 50, divY, 100, lcd->color565(68, 0, 34));
           bootSpr.setTextColor(lcd->color565(255, 0, 127));
-          bootSpr.drawString("v1.1.3", sw / 2, verY, 2);
+          bootSpr.drawString("v1.1.4", sw / 2, verY, 2);
         }
         
         // 7. Scan line filter (CRT simulation) - drawn on top of everything
