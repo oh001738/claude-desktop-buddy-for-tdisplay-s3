@@ -1593,13 +1593,13 @@ static void drawApproval() {
     spr.setCursor(4, H - 12);
     spr.print("sent...");
   } else {
-    // Buttons at bottom: BOOT(A)=left, IO14(B)=right
-    spr.setTextColor(GREEN, p.bg);
-    spr.setCursor(4, H - 12);
-    spr.print("A< approve");
+    // Buttons at bottom: IO14(B)=left, BOOT(A)=right
     spr.setTextColor(HOT, p.bg);
-    spr.setCursor(W - 52, H - 12);
-    spr.print("deny >B");
+    spr.setCursor(4, H - 12);
+    spr.print("B< deny");
+    spr.setTextColor(GREEN, p.bg);
+    spr.setCursor(W - 60, H - 12);
+    spr.print("approve >A");
   }
 }
 
@@ -2102,7 +2102,7 @@ void setup() {
           
           bootSpr.drawFastHLine(sw / 2 - 50, divY, 100, lcd->color565(68, 0, 34));
           bootSpr.setTextColor(lcd->color565(255, 0, 127));
-          bootSpr.drawString("v1.1.6", sw / 2, verY, 2);
+          bootSpr.drawString("v1.1.7", sw / 2, verY, 2);
         }
         
         // 7. Scan line filter (CRT simulation) - drawn on top of everything
