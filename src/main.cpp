@@ -1538,15 +1538,22 @@ static void drawApproval() {
       txtSpr.printf("%.20s", tama.promptHint + 20);
     }
 
-    // Bottom Action Area
+    // Bottom Action Area — label order depends on physical button position per rotation
     if (responseSent) {
       txtSpr.setTextColor(p.textDim, p.bg);
-      txtSpr.drawString("sent...", 75, 150, 2);
-    } else {
+      txtSpr.drawString("sent...", 40, 152, 2);
+    } else if (clockOrient == 1) {
+      // Buttons on LEFT: BOOT(A)=top, IO14(B)=bottom
       txtSpr.setTextColor(GREEN, p.bg);
-      txtSpr.drawString("1:Approve", 5, 150, 2);
+      txtSpr.drawString("^ A: approve", 5, 143, 1);
       txtSpr.setTextColor(HOT, p.bg);
-      txtSpr.drawString("2:Deny", 85, 150, 2);
+      txtSpr.drawString("v B: deny",    5, 157, 1);
+    } else {
+      // clockOrient==3, buttons on RIGHT: IO14(B)=top, BOOT(A)=bottom
+      txtSpr.setTextColor(HOT, p.bg);
+      txtSpr.drawString("^ B: deny",    5, 143, 1);
+      txtSpr.setTextColor(GREEN, p.bg);
+      txtSpr.drawString("v A: approve", 5, 157, 1);
     }
 
     txtSpr.pushSprite(170, 0);
@@ -1586,12 +1593,13 @@ static void drawApproval() {
     spr.setCursor(4, H - 12);
     spr.print("sent...");
   } else {
+    // Buttons at bottom: BOOT(A)=left, IO14(B)=right
     spr.setTextColor(GREEN, p.bg);
     spr.setCursor(4, H - 12);
-    spr.print("1: approve");
+    spr.print("A< approve");
     spr.setTextColor(HOT, p.bg);
-    spr.setCursor(W - 48, H - 12);
-    spr.print("2: deny");
+    spr.setCursor(W - 52, H - 12);
+    spr.print("deny >B");
   }
 }
 
